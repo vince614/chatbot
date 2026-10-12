@@ -13,11 +13,12 @@ try {
 
   console.log(`> ${QUESTION}\n`);
 
-  for await (const chunk of llm.streamChat({
+  // Sans outils déclarés, le modèle n'émet que des événements "text".
+  for await (const event of llm.streamChat({
     messages: [{ role: "user", content: QUESTION }],
     signal: controller.signal,
   })) {
-    process.stdout.write(chunk);
+    if (event.type === "text") process.stdout.write(event.text);
   }
   process.stdout.write("\n");
 } catch (error) {

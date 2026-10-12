@@ -1,10 +1,10 @@
 import { useCallback, useRef, useState } from "react";
 
 import { streamChat } from "./api";
-import type { ChatMessage, ChatStatus } from "./types";
+import type { ChatMessage, ChatStatus, UiMessage } from "./types";
 
 export interface UseChatResult {
-  messages: ChatMessage[];
+  messages: UiMessage[];
   status: ChatStatus;
   error: string | null;
   /** Ajoute un message utilisateur et lance la génération. */
@@ -20,12 +20,12 @@ export interface UseChatResult {
  * recharger la page repart de zéro, c'est voulu.
  */
 export function useChat(): UseChatResult {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<UiMessage[]>([]);
   const [status, setStatus] = useState<ChatStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const run = useCallback(async (history: ChatMessage[]) => {
+  const run = useCallback(async (history: UiMessage[]) => {
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -35,8 +35,14 @@ export function useChat(): UseChatResult {
     setError(null);
 
     try {
-      await streamChat(history, controller.signal, (text) => {
-        setMessages((prev) => appendToLastAssistant(prev, text));
+      await streamChat(toWireHistory(history), controller.signal, {
+        onDelta: (text) => setMessages((prev) => updateLastAssistant(prev, (m) => ({ ...m, content: m.content + text }))),
+        onToolCall: (name, input) =>
+          setMessages((prev) =>
+            updateLastAssistant(prev, (m) => ({ ...m, tools: [...(m.tools ?? []), { name, input }] })),
+          ),
+        onToolResult: (name, ok) =>
+          setMessages((prev) => updateLastAssistant(prev, (m) => ({ ...m, tools: markToolResult(m.tools, name, ok) }))),
       });
       setStatus("idle");
     } catch (err) {
@@ -76,19 +82,44 @@ export function useChat(): UseChatResult {
   return { messages, status, error, send, stop, retry };
 }
 
-function appendToLastAssistant(messages: ChatMessage[], text: string): ChatMessage[] {
-  const last = messages.at(-1);
-  if (!last || last.role !== "assistant") return messages;
-  return [...messages.slice(0, -1), { ...last, content: last.content + text }];
+/**
+ * Projette l'historique en texte seul avant l'envoi.
+ *
+ * SIMPLIFICATION VOULUE : les appels d'outils et leurs résultats ne vivent que
+ * le temps d'une requête, côté serveur. Au message suivant, le modèle ne voit
+ * que sa réponse textuelle finale, pas les résultats bruts des outils. Pour
+ * une question de suivi (« et en secondes ? »), il rappellera l'outil.
+ */
+function toWireHistory(messages: UiMessage[]): ChatMessage[] {
+  return messages.map(({ role, content }) => ({ role, content }));
 }
 
-function dropEmptyTrailingAssistant(messages: ChatMessage[]): ChatMessage[] {
+function updateLastAssistant(
+  messages: UiMessage[],
+  update: (message: UiMessage) => UiMessage,
+): UiMessage[] {
   const last = messages.at(-1);
-  return last?.role === "assistant" && last.content === "" ? messages.slice(0, -1) : messages;
+  if (!last || last.role !== "assistant") return messages;
+  return [...messages.slice(0, -1), update(last)];
+}
+
+/** Marque comme terminé le premier appel encore en cours portant ce nom. */
+function markToolResult(tools: UiMessage["tools"], name: string, ok: boolean) {
+  if (!tools) return tools;
+  const index = tools.findIndex((tool) => tool.name === name && tool.ok === undefined);
+  if (index === -1) return tools;
+  return tools.map((tool, i) => (i === index ? { ...tool, ok } : tool));
+}
+
+/** Après Stop ou erreur : une bulle sans texte ni outil n'a rien à montrer. */
+function dropEmptyTrailingAssistant(messages: UiMessage[]): UiMessage[] {
+  const last = messages.at(-1);
+  const isEmpty = last?.role === "assistant" && last.content === "" && !last.tools?.length;
+  return isEmpty ? messages.slice(0, -1) : messages;
 }
 
 /** Retire les réponses assistant finales pour que l'historique se termine par un message user. */
-function trimToLastUserMessage(messages: ChatMessage[]): ChatMessage[] {
+function trimToLastUserMessage(messages: UiMessage[]): UiMessage[] {
   let end = messages.length;
   while (end > 0 && messages[end - 1]?.role === "assistant") end -= 1;
   return messages.slice(0, end);

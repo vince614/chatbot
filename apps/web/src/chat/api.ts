@@ -6,16 +6,25 @@ export class ChatError extends Error {
   override readonly name = "ChatError";
 }
 
+export interface StreamChatHandlers {
+  /** Un fragment de la réponse textuelle. */
+  onDelta: (text: string) => void;
+  /** Le serveur va exécuter un outil. */
+  onToolCall: (name: string, input: unknown) => void;
+  /** L'outil a répondu, avec ou sans succès. */
+  onToolResult: (name: string, ok: boolean) => void;
+}
+
 /**
- * Envoie l'historique complet à POST /api/chat et appelle onDelta pour chaque
- * fragment de texte reçu. Se résout quand le serveur émet "done".
+ * Envoie l'historique complet à POST /api/chat et appelle les handlers pour
+ * chaque événement reçu. Se résout quand le serveur émet "done".
  * Rejette avec ChatError (HTTP non 2xx, événement "error", flux tronqué) ou
  * avec l'erreur du fetch (réseau, AbortError).
  */
 export async function streamChat(
   messages: ChatMessage[],
   signal: AbortSignal,
-  onDelta: (text: string) => void,
+  handlers: StreamChatHandlers,
 ): Promise<void> {
   const response = await fetch("/api/chat", {
     method: "POST",
@@ -44,8 +53,18 @@ export async function streamChat(
       for (const event of parser.push(decoder.decode(value, { stream: true }))) {
         switch (event.event) {
           case "delta":
-            onDelta(parseJson<{ text: string }>(event.data).text);
+            handlers.onDelta(parseJson<{ text: string }>(event.data).text);
             break;
+          case "tool_call": {
+            const { name, input } = parseJson<{ name: string; input: unknown }>(event.data);
+            handlers.onToolCall(name, input);
+            break;
+          }
+          case "tool_result": {
+            const { name, ok } = parseJson<{ name: string; ok: boolean }>(event.data);
+            handlers.onToolResult(name, ok);
+            break;
+          }
           case "done":
             completed = true;
             break;

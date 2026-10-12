@@ -1,13 +1,21 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyBaseLogger, FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
-import type { LlmClient } from "../llm/index.js";
+import type { ChatMessage, ContentPart, LlmClient, LlmEvent } from "../llm/index.js";
 import { SYSTEM_PROMPT } from "../prompts/system.js";
 import { openSseStream } from "../sse.js";
+import type { ToolRegistry } from "../tools/index.js";
 
 const MAX_MESSAGES = 50;
 const MAX_CONTENT_LENGTH = 8_000;
 
+/** Nombre maximal d'allers-retours modèle → outils → modèle pour une requête. */
+const MAX_TOOL_TURNS = 5;
+/** Délai maximal d'exécution d'un outil. */
+const TOOL_TIMEOUT_MS = 5_000;
+
+// Le client n'envoie que du texte : les échanges d'outils ne vivent que le temps
+// d'une requête, côté serveur. Simplification voulue (voir apps/web/src/chat/useChat.ts).
 const chatMessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().trim().min(1, "Le contenu est vide.").max(MAX_CONTENT_LENGTH),
@@ -25,12 +33,15 @@ const chatRequestSchema = z.object({
 
 /** Message renvoyé au client en cas d'échec : volontairement générique. */
 const GENERIC_ERROR_MESSAGE = "La génération a échoué. Réessaie dans un instant.";
+const TOO_MANY_TURNS_MESSAGE =
+  "Le modèle a enchaîné trop d'appels d'outils sans conclure. Réessaie en reformulant.";
 
 export interface ChatRoutesOptions {
   llm: LlmClient;
+  tools: ToolRegistry;
 }
 
-export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { llm }) => {
+export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { llm, tools }) => {
   app.post("/chat", async (request, reply) => {
     const parsed = chatRequestSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -44,7 +55,7 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { l
       });
     }
 
-    // Si le client ferme la connexion, on annule l'appel au modèle.
+    // Si le client ferme la connexion, on annule l'appel au modèle et les outils en cours.
     const controller = new AbortController();
     reply.raw.once("close", () => controller.abort());
 
@@ -53,15 +64,20 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { l
     const sse = openSseStream(reply.raw);
 
     try {
-      const stream = llm.streamChat({
-        system: SYSTEM_PROMPT,
+      const completed = await runConversation({
+        llm,
+        tools,
         messages: parsed.data.messages,
         signal: controller.signal,
+        sse,
+        log: request.log,
       });
-      for await (const text of stream) {
-        sse.send({ event: "delta", data: { text } });
+      if (completed) {
+        sse.send({ event: "done", data: {} });
+      } else {
+        request.log.warn({ maxTurns: MAX_TOOL_TURNS }, "trop de tours d'outils");
+        sse.send({ event: "error", data: { message: TOO_MANY_TURNS_MESSAGE } });
       }
-      sse.send({ event: "done", data: {} });
     } catch (error) {
       if (controller.signal.aborted) {
         request.log.info("client déconnecté, génération annulée");
@@ -75,6 +91,88 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { l
     }
   });
 };
+
+interface ConversationContext {
+  llm: LlmClient;
+  tools: ToolRegistry;
+  messages: ChatMessage[];
+  signal: AbortSignal;
+  sse: ReturnType<typeof openSseStream>;
+  log: FastifyBaseLogger;
+}
+
+type ToolCall = Extract<LlmEvent, { type: "tool_call" }>;
+
+/**
+ * La boucle d'outils. Un "tour" = un appel au modèle. Si le modèle demande des
+ * outils, on les exécute, on ajoute les résultats à l'historique et on repart.
+ * Renvoie true si le modèle a conclu, false si le plafond de tours est atteint.
+ */
+async function runConversation({ llm, tools, messages, signal, sse, log }: ConversationContext) {
+  const history: ChatMessage[] = [...messages];
+  const toolDefinitions = tools.list();
+
+  for (let turn = 1; turn <= MAX_TOOL_TURNS; turn += 1) {
+    let text = "";
+    const toolCalls: ToolCall[] = [];
+
+    const stream = llm.streamChat({
+      system: SYSTEM_PROMPT,
+      messages: history,
+      tools: toolDefinitions,
+      signal,
+    });
+    for await (const event of stream) {
+      if (event.type === "text") {
+        text += event.text;
+        sse.send({ event: "delta", data: { text: event.text } });
+      } else {
+        toolCalls.push(event);
+      }
+    }
+
+    // Pas d'appel d'outil : la réponse est finale.
+    if (toolCalls.length === 0) return true;
+
+    log.info({ turn, toolCalls: toolCalls.length }, "appels d'outils demandés");
+
+    // Le message assistant est renvoyé tel quel au tour suivant, texte et appels compris.
+    // Le fournisseur refuse un bloc texte vide : on ne l'ajoute que s'il y a du texte.
+    const assistantParts: ContentPart[] = toolCalls.map((call) => ({
+      type: "tool_call",
+      id: call.id,
+      name: call.name,
+      input: call.input,
+    }));
+    if (text.trim() !== "") assistantParts.unshift({ type: "text", text });
+    history.push({ role: "assistant", content: assistantParts });
+
+    // Les outils d'un même tour sont indépendants : exécution en parallèle.
+    const results = await Promise.all(
+      toolCalls.map((call) => executeToolCall(call, { tools, signal, sse, log })),
+    );
+    history.push({ role: "user", content: results });
+  }
+
+  return false;
+}
+
+async function executeToolCall(
+  call: ToolCall,
+  { tools, signal, sse, log }: Pick<ConversationContext, "tools" | "signal" | "sse" | "log">,
+): Promise<ContentPart> {
+  sse.send({ event: "tool_call", data: { name: call.name, input: call.input } });
+
+  const startedAt = performance.now();
+  const result = await tools.execute(call.name, call.input, { signal, timeoutMs: TOOL_TIMEOUT_MS });
+  const durationMs = Math.round(performance.now() - startedAt);
+
+  // Nom et durée seulement : ni les arguments ni le résultat.
+  log.info({ tool: call.name, durationMs, ok: result.ok }, "outil exécuté");
+  sse.send({ event: "tool_result", data: { name: call.name, ok: result.ok } });
+
+  return { type: "tool_result", toolCallId: call.id, content: result.content, isError: !result.ok };
+}
 
 function describeError(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);

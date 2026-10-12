@@ -121,6 +121,65 @@ body {
   border: 1px solid var(--border);
 }
 
+.bubble__tools {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.tool-activity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  overflow: hidden;
+}
+
+.tool-activity__icon {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.tool-activity--pending .tool-activity__icon {
+  animation: blink 1s steps(2, start) infinite;
+}
+
+.tool-activity--ok .tool-activity__icon {
+  background: #16a34a;
+}
+
+.tool-activity--failed .tool-activity__icon {
+  background: var(--danger-text);
+}
+
+.tool-activity__name {
+  flex: none;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.tool-activity__input {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-activity__state {
+  flex: none;
+  margin-left: auto;
+}
+
+.tool-activity--failed .tool-activity__state {
+  color: var(--danger-text);
+}
+
 .bubble__cursor {
   display: inline-block;
   width: 0.55em;

@@ -1,8 +1,12 @@
 import type { ServerResponse } from "node:http";
 
-/** Les trois événements que le flux /api/chat peut émettre. */
+/** Les événements que le flux /api/chat peut émettre. */
 export type SseEvent =
   | { event: "delta"; data: { text: string } }
+  /** Le modèle demande un outil ; émis juste avant son exécution. */
+  | { event: "tool_call"; data: { name: string; input: unknown } }
+  /** L'outil a répondu. Le contenu du résultat reste côté serveur. */
+  | { event: "tool_result"; data: { name: string; ok: boolean } }
   | { event: "done"; data: Record<string, never> }
   | { event: "error"; data: { message: string } };
 
