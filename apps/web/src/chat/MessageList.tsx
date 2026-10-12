@@ -1,0 +1,41 @@
+import { useEffect, useRef } from "react";
+
+import { MessageBubble } from "./MessageBubble";
+import type { ChatMessage, ChatStatus } from "./types";
+
+interface MessageListProps {
+  messages: ChatMessage[];
+  status: ChatStatus;
+}
+
+export function MessageList({ messages, status }: MessageListProps) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Défile vers le bas à chaque changement de l'historique (nouveau message ou delta).
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [messages]);
+
+  if (messages.length === 0) {
+    return (
+      <div className="chat__messages chat__messages--empty">
+        <p>Pose une question pour commencer.</p>
+      </div>
+    );
+  }
+
+  const lastIndex = messages.length - 1;
+
+  return (
+    <div className="chat__messages">
+      {messages.map((message, index) => (
+        <MessageBubble
+          key={index}
+          message={message}
+          streaming={status === "streaming" && index === lastIndex}
+        />
+      ))}
+      <div ref={bottomRef} />
+    </div>
+  );
+}

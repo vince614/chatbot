@@ -1,15 +1,20 @@
 import Fastify from "fastify";
 
 import { ConfigError, loadConfig } from "./config.js";
+import { createLlmClient } from "./llm/index.js";
+import { chatRoutes } from "./routes/chat.js";
 
 // Le serveur refuse de démarrer si la configuration est incomplète.
 const config = loadConfigOrExit();
+const llm = createLlmClient(config.llm);
 
+// Le logger par défaut trace méthode, URL et statut : jamais le corps des requêtes.
 const app = Fastify({ logger: true });
 
 await app.register(
   async (api) => {
     api.get("/health", async () => ({ status: "ok" }));
+    await api.register(chatRoutes, { llm });
   },
   { prefix: "/api" },
 );
