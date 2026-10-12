@@ -1,0 +1,13 @@
+node_modules/
+dist/
+
+# Secrets : seul .env.example est versionné
+.env
+.env.*
+!.env.example
+
+# Divers
+.DS_Store
+*.log
+.idea/
+.vscode/

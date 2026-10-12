@@ -1,0 +1,22 @@
+{
+  "name": "chatbot",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Mini-projet d'apprentissage : chatbot React + Node (Fastify)",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
+    "typecheck": "npm run typecheck --workspaces",
+    "hello": "npm run hello -w apps/api"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "concurrently": "^9.2.0",
+    "typescript": "^5.9.0"
+  }
+}
