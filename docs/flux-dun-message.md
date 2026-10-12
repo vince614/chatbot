@@ -5,6 +5,8 @@
 > langage ni fait de streaming HTTP. Chaque leçon part d'une question,
 > explique le concept, montre le code réel du projet, puis termine par un
 > encadré « À retenir » et quelques questions pour vérifier ta compréhension.
+> Les réponses sont regroupées dans le **Corrigé des questions**, tout à la
+> fin : essaie d'abord, compare ensuite.
 >
 > **Le fil rouge.** Nous allons suivre un seul message, « Explique les
 > monorepos », depuis la touche Entrée jusqu'au rendu Markdown de la réponse.
@@ -24,6 +26,7 @@
 | 7 | Comment l'interface affiche-t-elle une réponse qui se construit ? |
 | 8 | Que se passe-t-il quand ça se passe mal ? (Stop, erreurs, coupures) |
 | 9 | Synthèse : le voyage complet d'un message |
+| Corrigé | Réponses détaillées aux questions de chaque leçon |
 
 ---
 
@@ -1188,3 +1191,340 @@ curl -i -X POST http://localhost:3000/api/chat \
 Exercice final : lance le `curl -N`, puis coupe-le avec Ctrl+C après le
 premier delta. Va lire le log de l'API et trouve la ligne qui prouve que le
 modèle a été arrêté. Tu viens de vérifier la Leçon 8 toi-même.
+
+---
+
+## Corrigé des questions
+
+> Essaie de répondre par écrit avant de lire. Une réponse qui tient en deux
+> phrases et qui cite le bon fichier vaut mieux qu'une longue paraphrase.
+
+### Leçon 1 : garder un secret
+
+**1. Si tu renommes `LLM_API_KEY` en `VITE_LLM_API_KEY` et que tu le mets
+dans `apps/web/.env`, que se passe-t-il, et pourquoi est-ce grave ?**
+
+Vite expose au code du navigateur toutes les variables qui commencent par
+`VITE_`, via `import.meta.env.VITE_LLM_API_KEY`. Elles sont remplacées
+textuellement dans le bundle JavaScript au moment du build. La clé se
+retrouve donc en clair dans un fichier `.js` téléchargé par chaque
+visiteur : un clic droit « Afficher la source » ou l'onglet Réseau des
+outils de développement suffit à la lire.
+
+C'est grave parce qu'une clé API est un moyen de paiement. Quiconque la
+récupère peut l'utiliser à tes frais jusqu'à révocation, et tu n'as aucun
+moyen de distinguer ses appels des tiens. Le préfixe `VITE_` est précisément
+le signal « ceci est public » ; une clé ne doit jamais le porter. Dans notre
+projet, aucun fichier de `apps/web` ne lit la clé : le navigateur appelle
+`/api/chat`, et c'est `apps/api` qui la détient (Leçon 1, `config.ts`).
+
+**2. Pourquoi `loadConfig()` est-il appelé avant la création du serveur
+Fastify, et pas dans la route `/chat` ?**
+
+Pour échouer tôt et une seule fois. Si la configuration est lue au
+démarrage, une variable manquante arrête le processus avec un message
+clair avant que le serveur n'écoute : impossible de déployer une API
+« à moitié configurée » qui répondrait `200` sur `/health` et planterait au
+premier vrai appel.
+
+Lire la configuration dans la route poserait trois problèmes. L'erreur
+n'apparaîtrait qu'au premier utilisateur, sous forme d'un `500` opaque. On
+relirait le fichier et les variables à chaque requête, pour rien. Et la
+route devrait gérer un cas (« la clé n'existe pas ») qui n'a aucun sens une
+fois le serveur lancé. C'est pourquoi `server.ts` fait
+`loadConfigOrExit()` puis `createLlmClient(config.llm)` une fois, et passe
+le client déjà construit au plugin de routes.
+
+### Leçon 2 : parler à un LLM sans s'y enchaîner
+
+**1. Un `FakeLlmClient` qui renvoie toujours « Bonjour », que devrait-il
+implémenter ?**
+
+Uniquement l'interface `LlmClient` de `llm/types.ts`, c'est-à-dire une seule
+méthode `streamChat(params)` qui renvoie un `AsyncIterable<string>`. La
+façon la plus courte est un générateur asynchrone :
+
+```ts
+import type { LlmClient, StreamChatParams } from "./types.js";
+
+export class FakeLlmClient implements LlmClient {
+  async *streamChat(_params: StreamChatParams): AsyncIterable<string> {
+    yield "Bon";
+    yield "jour";
+  }
+}
+```
+
+Il n'a besoin ni de clé, ni de SDK, ni de réseau. Deux `yield` plutôt qu'un
+seul permettent de vérifier que la route et le navigateur gèrent bien
+plusieurs fragments. Pour l'utiliser, il suffirait d'ajouter un
+`case "fake"` dans `factory.ts` : la route `/chat`, le script `hello` et le
+front ne changent pas d'une ligne. C'est tout l'intérêt de la Leçon 2 : le
+reste du code ne connaît que l'interface.
+
+**2. Pourquoi `streamChat` lève-t-elle une erreur après la boucle plutôt que
+de renvoyer une chaîne vide quand le modèle refuse ?**
+
+Parce qu'un refus n'est pas une réponse vide, c'est un échec, et les deux
+ne doivent pas être traités pareil. Si le générateur se terminait
+silencieusement, la route enverrait `done`, le navigateur passerait en
+`idle`, et l'utilisateur verrait une bulle assistant vide sans
+explication ni bouton Réessayer. Il croirait à un bug d'affichage.
+
+En lançant une erreur, on fait remonter l'information par le canal prévu :
+la route tombe dans son `catch`, logue la raison, envoie un événement SSE
+`error`, et le hook `useChat` passe en `status = "error"` avec le bandeau.
+Une interface doit dire ce qui ne va pas plutôt que de faire semblant que
+tout s'est bien passé. Détail technique : on ne connaît le `stop_reason`
+qu'à la fin, via `stream.finalMessage()`, d'où la position de ce test après
+la boucle.
+
+### Leçon 3 : qu'est-ce que le streaming ?
+
+**1. Si `streamChat` était déclarée `async streamChat(...): Promise<string>`,
+que faudrait-il changer dans la route `/chat` et dans le navigateur ?**
+
+Côté serveur, le `for await (const delta of stream)` de `routes/chat.ts`
+n'aurait plus de sens : il n'y aurait qu'une seule valeur, disponible à la
+fin. La route attendrait la réponse complète puis l'enverrait d'un bloc. Le
+SSE lui-même deviendrait inutile ; un simple `reply.send({ text })` en JSON
+ferait l'affaire.
+
+Côté navigateur, tout le pipeline `reader.read()` → `TextDecoder` →
+parseur SSE disparaîtrait au profit d'un `await response.json()`. Le hook
+afficherait la bulle d'un coup au lieu de l'allonger delta par delta, et le
+bouton Stop ne pourrait plus « garder le texte déjà reçu » puisque rien
+n'arrive avant la fin.
+
+Ce que la question veut te faire remarquer : le type de retour d'une seule
+méthode conditionne l'architecture de toute la chaîne. Choisir
+`AsyncIterable<string>` plutôt que `Promise<string>` est la décision qui
+rend le streaming possible, et elle se prend au point le plus bas, dans
+`llm/types.ts`.
+
+**2. Que signifie l'expression « token par token » ?**
+
+Un modèle de langage ne produit pas des lettres ni des mots, mais des
+**tokens** : des morceaux de texte d'un vocabulaire fixe, souvent un mot
+courant entier, parfois un fragment (« mono » + « repo ») ou un signe de
+ponctuation. Il les génère un par un, chaque token dépendant de tous les
+précédents. « Token par token » désigne donc le rythme naturel de la
+génération.
+
+Streamer, c'est transmettre ce rythme au lieu de le cacher. En pratique,
+l'API regroupe parfois quelques tokens dans un même événement
+`content_block_delta`, et le réseau peut recoller plusieurs événements dans
+un seul paquet. C'est pourquoi notre code ne suppose jamais « un delta = un
+token = un mot » : il traite des fragments de texte de taille quelconque.
+
+### Leçon 4 : Server-Sent Events
+
+**1. Pourquoi ne pas envoyer simplement le texte brut, sans `event:` ni
+JSON ? Deux cas qui poseraient problème.**
+
+Premier cas : **distinguer le texte du reste**. Si le modèle écrit « La
+génération a échoué », comment le navigateur sait-il s'il s'agit de la
+réponse ou d'une erreur serveur ? Sans canal séparé, il faudrait inventer
+un marqueur dans le texte, qu'un utilisateur pourrait reproduire en le
+tapant lui-même. Les lignes `event: delta` / `event: error` / `event: done`
+règlent le problème : le type est hors du contenu.
+
+Deuxième cas : **le contenu lui-même**. Une réponse Markdown contient des
+sauts de ligne, et le format SSE utilise justement la ligne vide comme
+séparateur d'événements. Un paragraphe suivi d'une ligne vide serait pris
+pour la fin d'un événement. Encoder le texte en JSON (`{"text":"...\n\n..."}`)
+transforme ces sauts de ligne en `\n` littéraux sur une seule ligne, et le
+parseur fait l'inverse à l'arrivée. Le JSON protège aussi les espaces en
+début de fragment, que SSE ignorerait sinon après `data:`.
+
+Une raison bonus : savoir que la réponse est **terminée**. Sans événement
+`done`, une connexion fermée pourrait signifier « fini » ou « coupée en
+plein milieu ». La Leçon 8 s'appuie précisément sur cette différence.
+
+**2. Une fois les en-têtes envoyés avec le statut 200, peut-on encore
+répondre 404 ou 500 ? Que fait-on à la place ?**
+
+Non. HTTP envoie la ligne de statut et les en-têtes en premier, puis le
+corps. Dès que `flushHeaders()` est parti, le `200` est écrit sur la prise
+réseau et le navigateur l'a déjà lu : aucun moyen de le rappeler. Tenter
+`res.statusCode = 500` après coup lève une erreur
+`ERR_HTTP_HEADERS_SENT` dans Node.
+
+À la place, on fait passer l'erreur **dans le corps**, comme un événement
+parmi les autres : `event: error` avec un `data` JSON, puis on ferme le
+flux. C'est le rôle de `sse.send({ type: "error", ... })` dans le `catch` de
+la route. Le navigateur, lui, ne regarde plus le statut HTTP à ce stade ; il
+réagit au type d'événement. Cette contrainte explique aussi la réponse à la
+question suivante : tout ce qui peut échouer **avant** le flux, comme la
+validation, doit être fait avant d'ouvrir le flux, pendant qu'un vrai
+`400` est encore possible.
+
+### Leçon 5 : le serveur reçoit un message
+
+**1. Si tu déplaçais la validation Zod après `openSseStream`, que recevrait
+le navigateur en cas de corps invalide ?**
+
+Un `200 OK` avec `Content-Type: text/event-stream`, puis soit rien (si tu
+fermais simplement), soit un événement `error` dans le flux. Jamais de
+`400`, pour la raison vue à la Leçon 4 : les en-têtes sont partis.
+
+Conséquences concrètes dans notre front. `api.ts` teste d'abord
+`response.ok` : il serait vrai, donc la branche `describeHttpError` qui
+affiche « Requête refusée : … » avec le premier problème Zod ne
+s'exécuterait jamais. L'utilisateur verrait au mieux le message générique
+« La génération a échoué », au pire « La connexion s'est interrompue avant
+la fin de la réponse », sans savoir que c'est son message qui était trop
+long. Et le serveur aurait ouvert un flux, créé un `AbortController` et
+pris la main sur la réponse pour une requête qu'il allait rejeter de toute
+façon. Règle : **tout ce qui peut produire un statut HTTP se décide avant
+`hijack()`**.
+
+**2. Pourquoi envoie-t-on un message d'erreur générique au client alors
+qu'on connaît la vraie cause ?**
+
+Pour deux raisons, sécurité et responsabilité.
+
+Sécurité : la vraie cause vient souvent du SDK ou de l'API distante.
+Son message peut contenir l'URL appelée, le nom du modèle, un identifiant
+de requête, un extrait de la réponse HTTP, parfois des indices sur la
+configuration du serveur. Tout ce qu'on écrit dans l'événement `error`
+atterrit chez un inconnu, dans son navigateur. On ne divulgue rien qu'on ne
+voudrait pas voir dans une capture d'écran publique.
+
+Responsabilité : l'utilisateur ne peut rien faire d'un `401 invalid
+x-api-key` ou d'un `529 overloaded`. Ce n'est pas son problème, c'est le
+nôtre. Le message utile pour lui est « ça a échoué, réessaie » ; le message
+utile pour nous est la cause complète, et elle va au bon endroit : le log
+serveur, via `request.log.error({ reason })`. L'exception à cette règle est
+le `400` : là, la cause (« le dernier message doit avoir le rôle user »)
+concerne bien le client, et on la lui donne.
+
+### Leçon 6 : le navigateur lit le flux
+
+**1. Remplace `setMessages((prev) => ...)` par
+`setMessages([...messages, ...])`. Que verrait l'utilisateur ?**
+
+Il verrait la réponse **ne pas s'afficher**, ou s'afficher par à-coups
+incohérents, et la plupart du temps rester vide jusqu'à la fin.
+
+Explication. La fonction `run` est créée par `useCallback` avec `[]` comme
+dépendances : elle capture la variable `messages` telle qu'elle était au
+premier rendu, c'est-à-dire un tableau vide ou l'historique d'avant l'envoi.
+La fonction de rappel `onDelta` qu'on passe à `streamChat` est créée dans
+`run`, donc elle voit la même valeur figée. À chaque delta, elle calculerait
+`[...messagesFigés, bulleAvecCeDeltaSeul]` : le texte n'est jamais
+accumulé, chaque fragment écrase le précédent, et la bulle assistant vide
+créée au début de `run` est perdue. C'est le problème classique de la
+**fermeture périmée** (stale closure).
+
+La forme fonctionnelle `setMessages((prev) => ...)` demande à React de nous
+donner **l'état réel au moment où la mise à jour s'applique**, quel que soit
+l'âge de la fermeture. React garantit aussi que ces fonctions s'exécutent
+dans l'ordre d'appel, donc deux deltas arrivant très vite ne se perdent
+pas. Règle à retenir : quand la nouvelle valeur dépend de l'ancienne, et a
+fortiori depuis un rappel asynchrone, toujours la forme fonctionnelle.
+
+**2. Pourquoi `TextDecoder` a-t-il besoin de `{ stream: true }` ? Exemple
+de caractère problématique.**
+
+Parce que le réseau découpe en **octets**, pas en caractères, et qu'en
+UTF-8 un caractère peut occuper de un à quatre octets. Rien n'empêche un
+paquet de se terminer au milieu d'un caractère.
+
+Exemple : le « é » de « génération » s'écrit en UTF-8 sur deux octets,
+`C3 A9`. Si le premier paquet se termine par `C3` et le second commence par
+`A9`, un décodeur sans mémoire traiterait `C3` seul comme une séquence
+invalide et produirait le caractère de remplacement « � », puis `A9` seul
+produirait un second « � ». L'utilisateur lirait « g��nération ». Un emoji
+(quatre octets) ou un « — » (trois octets) ont trois fois plus de chances
+de tomber sur une coupure.
+
+Avec `{ stream: true }`, le décodeur **garde les octets incomplets** en
+attendant le paquet suivant, et n'émet le caractère que quand il est
+entier. C'est exactement le même principe que le tampon du parseur SSE,
+une couche plus bas : le réseau coupe où il veut, chaque couche recolle ce
+qui la concerne.
+
+### Leçon 7 : afficher une réponse qui se construit
+
+**1. Pourquoi le message utilisateur n'est-il pas rendu avec
+`react-markdown` lui aussi ?**
+
+Parce que ce n'est pas du Markdown, c'est ce que la personne a tapé, et
+elle s'attend à le revoir tel quel. Si elle écrit « utilise *args dans la
+fonction » ou colle un bout de code avec des `#` et des `_`, un rendu
+Markdown transformerait son texte : italique inattendu, titres géants,
+listes involontaires. Elle penserait que son message a été altéré avant
+envoi.
+
+Il y a aussi un argument de simplicité et de confiance : l'assistant
+produit volontairement du Markdown (le prompt système le lui demande), donc
+le rendre a du sens. Le texte utilisateur n'a pas de format défini. Un
+`<p>` avec `white-space: pre-wrap` conserve ses sauts de ligne, ce qui est
+tout ce qu'il attend. Enfin, moins on interprète ce qui vient de
+l'utilisateur, moins on ouvre de surface à des rendus surprenants.
+
+**2. Que se passerait-il si `useEffect` dépendait de `[messages, send]` ?**
+
+Dans notre code précis, probablement rien de visible, et c'est ce qui rend
+l'erreur dangereuse. `send` est recréé par `useCallback` à chaque fois que
+`messages` ou `status` change. Il changerait donc en même temps que
+`messages`, ou légèrement plus souvent (au passage `idle` → `streaming`),
+et l'effet défilerait une ou deux fois de trop. Pas de boucle infinie ici,
+parce que l'effet ne modifie pas d'état.
+
+Mais c'est une mauvaise habitude pour trois raisons. D'abord, le défilement
+n'a **aucun rapport** avec `send` : la liste de dépendances doit dire « cet
+effet réagit à ceci », et mentir sur cette liste rend le code illisible.
+Ensuite, dès qu'un composant parent ne mémorise pas la fonction qu'il passe
+(ou si on la remplace un jour par une fonction inline), elle change à
+**chaque rendu** : l'effet s'exécute à chaque rendu, et s'il touche à
+l'état, on obtient la boucle infinie classique. Enfin, pour une fonction de
+traduction `t` ou un lanceur d'action, c'est exactement le même piège :
+ces fonctions sont des outils, pas des données. On ne met dans les
+dépendances que ce dont le résultat de l'effet dépend réellement, ici
+`messages`.
+
+### Leçon 8 : quand ça se passe mal
+
+**1. Pourquoi faut-il deux `AbortController`, et pas un seul partagé ?**
+
+Parce qu'un `AbortController` est un objet JavaScript qui vit dans **un
+seul processus**. Celui du navigateur existe dans l'onglet ; celui du
+serveur existe dans Node, sur une autre machine en production. Aucun des
+deux ne peut appeler `abort()` sur l'autre : il n'y a pas de mémoire
+partagée entre un navigateur et un serveur.
+
+Chacun contrôle donc ce qui est à sa portée. Le contrôleur du navigateur
+coupe le `fetch`, ce qui ferme la connexion HTTP. Cette fermeture est le
+**seul signal** qui traverse le réseau. Côté serveur, `reply.raw.once("close")`
+reçoit ce signal et déclenche le second contrôleur, qui coupe la requête
+du SDK vers Anthropic. Les deux contrôleurs sont donc reliés, mais par la
+connexion, pas par une référence.
+
+Ce découplage a une vertu supplémentaire : le serveur annule le modèle
+pour **toute** fermeture, pas seulement un clic sur Stop. Onglet fermé,
+Wi-Fi coupé, navigateur planté : dans tous les cas, on arrête de payer des
+tokens pour une réponse que personne ne lira.
+
+**2. Si tu retirais `setMessages(dropEmptyTrailingAssistant)` du `catch`,
+qu'afficherait l'interface après un Stop immédiat ?**
+
+Une **bulle assistant vide** resterait dans la liste, sous le message de
+l'utilisateur. Rappel du déroulement : `run` ajoute d'abord
+`{ role: "assistant", content: "" }` pour que la bulle apparaisse tout de
+suite, puis la remplit au fil des deltas. Si on clique Stop avant le
+premier delta, aucun texte n'arrive, le `fetch` est rejeté, on passe dans
+le `catch` avec `status = "idle"`, et la bulle vide est toujours là.
+
+Visuellement : une boîte grise sans rien dedans, sans curseur puisque le
+streaming est terminé. Pire, le prochain envoi inclurait ce message vide
+dans l'historique envoyé au serveur, et Zod le refuserait avec « Le contenu
+est vide » : l'utilisateur serait bloqué par un `400` qu'il ne comprend
+pas. Le même problème se poserait après une erreur HTTP immédiate, par
+exemple API arrêtée.
+
+`dropEmptyTrailingAssistant` ne retire que la dernière bulle **si elle est
+assistant et vide**. Si Stop arrive après quelques deltas, la bulle a du
+contenu et elle est conservée : c'est le comportement demandé, « garder le
+texte déjà reçu ».
