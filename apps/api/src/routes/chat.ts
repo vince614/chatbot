@@ -22,6 +22,13 @@ const chatMessageSchema = z.object({
 });
 
 const chatRequestSchema = z.object({
+  /**
+   * Si vrai, le flux contient des événements "debug" avec le prompt système,
+   * l'historique complet envoyé au modèle et sa réponse brute. Outil
+   * d'apprentissage : en production on retirerait ce drapeau, car il expose
+   * le prompt système au client.
+   */
+  debug: z.boolean().optional(),
   messages: z
     .array(chatMessageSchema)
     .min(1, "Il faut au moins un message.")
@@ -68,6 +75,7 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { l
         llm,
         tools,
         messages: parsed.data.messages,
+        debug: parsed.data.debug ?? false,
         signal: controller.signal,
         sse,
         log: request.log,
@@ -96,6 +104,7 @@ interface ConversationContext {
   llm: LlmClient;
   tools: ToolRegistry;
   messages: ChatMessage[];
+  debug: boolean;
   signal: AbortSignal;
   sse: ReturnType<typeof openSseStream>;
   log: FastifyBaseLogger;
@@ -108,7 +117,7 @@ type ToolCall = Extract<LlmEvent, { type: "tool_call" }>;
  * outils, on les exécute, on ajoute les résultats à l'historique et on repart.
  * Renvoie true si le modèle a conclu, false si le plafond de tours est atteint.
  */
-async function runConversation({ llm, tools, messages, signal, sse, log }: ConversationContext) {
+async function runConversation({ llm, tools, messages, debug, signal, sse, log }: ConversationContext) {
   const history: ChatMessage[] = [...messages];
   const toolDefinitions = tools.list();
 
@@ -116,12 +125,16 @@ async function runConversation({ llm, tools, messages, signal, sse, log }: Conve
     let text = "";
     const toolCalls: ToolCall[] = [];
 
-    const stream = llm.streamChat({
-      system: SYSTEM_PROMPT,
-      messages: history,
-      tools: toolDefinitions,
-      signal,
-    });
+    const params = { system: SYSTEM_PROMPT, messages: history, tools: toolDefinitions };
+    if (debug) {
+      // Copie de l'historique : il sera muté après l'appel.
+      sse.send({
+        event: "debug",
+        data: { kind: "model_request", turn, payload: { ...params, messages: structuredClone(history) } },
+      });
+    }
+
+    const stream = llm.streamChat({ ...params, signal });
     for await (const event of stream) {
       if (event.type === "text") {
         text += event.text;
@@ -129,6 +142,10 @@ async function runConversation({ llm, tools, messages, signal, sse, log }: Conve
       } else {
         toolCalls.push(event);
       }
+    }
+
+    if (debug) {
+      sse.send({ event: "debug", data: { kind: "model_response", turn, payload: { text, toolCalls } } });
     }
 
     // Pas d'appel d'outil : la réponse est finale.

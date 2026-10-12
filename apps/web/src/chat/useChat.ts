@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 
 import { streamChat } from "./api";
-import type { ChatMessage, ChatStatus, UiMessage } from "./types";
+import type { ChatMessage, ChatStatus, LogEntry, UiMessage } from "./types";
 
 export interface UseChatResult {
   messages: UiMessage[];
@@ -13,7 +13,15 @@ export interface UseChatResult {
   stop: () => void;
   /** Après une erreur : retire la réponse incomplète et renvoie le dernier message utilisateur. */
   retry: () => void;
+  /** Journal des événements, du plus ancien au plus récent. */
+  log: LogEntry[];
+  clearLog: () => void;
 }
+
+/** Au-delà, les plus anciennes lignes du journal sont oubliées. */
+const MAX_LOG_ENTRIES = 300;
+/** Garde-fou sur le texte libre d'une ligne ; les données structurées ne sont pas tronquées. */
+const MAX_LOG_MESSAGE = 4_000;
 
 /**
  * Porte tout l'état du chat. L'historique vit uniquement dans l'état React :
@@ -24,6 +32,21 @@ export function useChat(): UseChatResult {
   const [status, setStatus] = useState<ChatStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const [log, setLog] = useState<LogEntry[]>([]);
+  const nextLogId = useRef(1);
+
+  const append = useCallback((kind: LogEntry["kind"], message: string, data?: unknown) => {
+    const entry: LogEntry = {
+      id: nextLogId.current++,
+      time: new Date().toLocaleTimeString("fr-FR", { hour12: false }) + "." + String(Date.now() % 1000).padStart(3, "0"),
+      kind,
+      message: message.length > MAX_LOG_MESSAGE ? `${message.slice(0, MAX_LOG_MESSAGE - 1)}…` : message,
+      ...(data !== undefined && { data }),
+    };
+    setLog((prev) => (prev.length >= MAX_LOG_ENTRIES ? [...prev.slice(1), entry] : [...prev, entry]));
+  }, []);
+
+  const clearLog = useCallback(() => setLog([]), []);
 
   const run = useCallback(async (history: UiMessage[]) => {
     const controller = new AbortController();
@@ -33,9 +56,22 @@ export function useChat(): UseChatResult {
     setMessages([...history, { role: "assistant", content: "" }]);
     setStatus("streaming");
     setError(null);
+    append("state", "status → streaming");
+
+    const wire = toWireHistory(history);
+    append("send", `POST /api/chat avec ${wire.length} message(s), ${JSON.stringify(wire).length} octets`);
 
     try {
-      await streamChat(toWireHistory(history), controller.signal, {
+      await streamChat(wire, controller.signal, {
+        onHttp: (code) => append("http", `réponse HTTP ${code}`),
+        // Les événements "debug" ont leur propre ligne, plus lisible, via onDebug.
+        onEvent: (event, data) => {
+          if (event !== "debug") append("sse", event, parseJsonOrText(data));
+        },
+        onDebug: (kind, turn, payload) => {
+          const arrow = kind === "model_request" ? "→ envoyé au modèle" : "← reçu du modèle";
+          append("model", `${arrow} (tour ${turn})`, payload);
+        },
         onDelta: (text) => setMessages((prev) => updateLastAssistant(prev, (m) => ({ ...m, content: m.content + text }))),
         onToolCall: (name, input) =>
           setMessages((prev) =>
@@ -45,41 +81,58 @@ export function useChat(): UseChatResult {
           setMessages((prev) => updateLastAssistant(prev, (m) => ({ ...m, tools: markToolResult(m.tools, name, ok) }))),
       });
       setStatus("idle");
+      append("state", "status → idle (réponse complète)");
     } catch (err) {
       setMessages(dropEmptyTrailingAssistant);
       if (controller.signal.aborted) {
         // Arrêt volontaire : pas une erreur.
         setStatus("idle");
+        append("state", "status → idle (arrêt volontaire)");
       } else {
-        setError(err instanceof Error ? err.message : "Erreur inconnue.");
+        const message = err instanceof Error ? err.message : "Erreur inconnue.";
+        setError(message);
         setStatus("error");
+        append("state", `status → error : ${message}`);
       }
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
     }
-  }, []);
+  }, [append]);
 
   const send = useCallback(
     (text: string) => {
       const content = text.trim();
       if (!content || status === "streaming") return;
+      append("action", `send (${content.length} caractères)`);
       void run([...messages, { role: "user", content }]);
     },
-    [messages, status, run],
+    [messages, status, run, append],
   );
 
   const stop = useCallback(() => {
-    abortRef.current?.abort();
-  }, []);
+    if (!abortRef.current) return;
+    append("action", "stop : AbortController.abort()");
+    abortRef.current.abort();
+  }, [append]);
 
   const retry = useCallback(() => {
     if (status === "streaming") return;
     const history = trimToLastUserMessage(messages);
     if (history.length === 0) return;
+    append("action", "retry : renvoi jusqu'au dernier message utilisateur");
     void run(history);
-  }, [messages, status, run]);
+  }, [messages, status, run, append]);
 
-  return { messages, status, error, send, stop, retry };
+  return { messages, status, error, send, stop, retry, log, clearLog };
+}
+
+/** Le champ data d'un événement SSE est du JSON chez nous, mais on reste tolérant. */
+function parseJsonOrText(raw: string): unknown {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return raw;
+  }
 }
 
 /**

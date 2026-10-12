@@ -20,3 +20,16 @@ export type UiMessage = ChatMessage & {
 };
 
 export type ChatStatus = "idle" | "streaming" | "error";
+
+/** Les familles d'événements du journal, filtrables une à une. */
+export type LogKind = "action" | "send" | "http" | "sse" | "model" | "state";
+
+/** Une ligne du journal affiché à côté du chat (outil d'apprentissage). */
+export type LogEntry = {
+  id: number;
+  time: string;
+  kind: LogKind;
+  message: string;
+  /** Donnée structurée associée (événement SSE décodé, échange avec le modèle), affichée en arbre. */
+  data?: unknown;
+};

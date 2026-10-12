@@ -7,8 +7,14 @@ export type SseEvent =
   | { event: "tool_call"; data: { name: string; input: unknown } }
   /** L'outil a répondu. Le contenu du résultat reste côté serveur. */
   | { event: "tool_result"; data: { name: string; ok: boolean } }
+  /** Débogage (sur demande du client) : ce que le serveur envoie au modèle et ce qu'il en reçoit. */
+  | { event: "debug"; data: DebugEvent }
   | { event: "done"; data: Record<string, never> }
   | { event: "error"; data: { message: string } };
+
+export type DebugEvent =
+  | { kind: "model_request"; turn: number; payload: unknown }
+  | { kind: "model_response"; turn: number; payload: unknown };
 
 export function formatSseEvent({ event, data }: SseEvent): string {
   // JSON.stringify ne produit jamais de saut de ligne brut : la ligne "data:" reste entière.

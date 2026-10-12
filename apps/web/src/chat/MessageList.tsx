@@ -19,7 +19,13 @@ export function MessageList({ messages, status }: MessageListProps) {
   if (messages.length === 0) {
     return (
       <div className="chat__messages chat__messages--empty">
-        <p>Pose une question pour commencer.</p>
+        <div className="empty">
+          <p className="empty__title">Pose une question pour commencer.</p>
+          <p className="empty__hint">
+            Essaie « Quel jour serons-nous dans 45 jours ? » ou « Combien font 1234 × 5678 ? » pour voir les
+            outils à l'œuvre.
+          </p>
+        </div>
       </div>
     );
   }

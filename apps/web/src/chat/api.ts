@@ -13,6 +13,12 @@ export interface StreamChatHandlers {
   onToolCall: (name: string, input: unknown) => void;
   /** L'outil a répondu, avec ou sans succès. */
   onToolResult: (name: string, ok: boolean) => void;
+  /** Journal : statut HTTP de la réponse, avant toute lecture du corps. */
+  onHttp?: (status: number) => void;
+  /** Journal : chaque événement SSE brut, avant son interprétation. */
+  onEvent?: (event: string, data: string) => void;
+  /** Journal : ce que le serveur a envoyé au modèle et ce qu'il en a reçu, par tour. */
+  onDebug?: (kind: "model_request" | "model_response", turn: number, payload: unknown) => void;
 }
 
 /**
@@ -29,10 +35,12 @@ export async function streamChat(
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages }),
+    // debug: true demande au serveur d'inclure les échanges avec le modèle dans le flux.
+    body: JSON.stringify({ messages, debug: handlers.onDebug !== undefined }),
     signal,
   });
 
+  handlers.onHttp?.(response.status);
   if (!response.ok) {
     throw new ChatError(await describeHttpError(response));
   }
@@ -51,6 +59,7 @@ export async function streamChat(
       if (done) break;
 
       for (const event of parser.push(decoder.decode(value, { stream: true }))) {
+        handlers.onEvent?.(event.event, event.data);
         switch (event.event) {
           case "delta":
             handlers.onDelta(parseJson<{ text: string }>(event.data).text);
@@ -63,6 +72,15 @@ export async function streamChat(
           case "tool_result": {
             const { name, ok } = parseJson<{ name: string; ok: boolean }>(event.data);
             handlers.onToolResult(name, ok);
+            break;
+          }
+          case "debug": {
+            const { kind, turn, payload } = parseJson<{
+              kind: "model_request" | "model_response";
+              turn: number;
+              payload: unknown;
+            }>(event.data);
+            handlers.onDebug?.(kind, turn, payload);
             break;
           }
           case "done":
