@@ -1,4 +1,6 @@
-# Cours : construire un chatbot en streaming avec React, Fastify et un LLM
+# Jour 1 · Cours 1 — Construire un chatbot en streaming avec React, Fastify et un LLM
+
+> [Sommaire](README.md) · Suivant : [Jour 1 · Cours 2 — Le tool use](jour-1-appel-doutils.md)
 
 > **À qui s'adresse ce cours.** À un étudiant qui connaît les bases de
 > JavaScript, de React et de Node, mais qui n'a jamais branché un modèle de
@@ -1160,17 +1162,7 @@ Navigateur                          Vite (5173)      Fastify (3000)        API A
 6. **Deux `AbortController`.** Celui du navigateur coupe le `fetch`, celui du
    serveur coupe le modèle quand la connexion se ferme.
 
-### Pour aller plus loin (non fait, volontairement)
-
-- **Historique trop long** : la limite est de 50 messages. Il faudra un jour
-  tronquer côté front ou résumer côté serveur.
-- **Production** : Vite disparaît. Il faut servir le build statique et faire
-  pointer `/api` vers Fastify via un reverse proxy, en gardant le streaming
-  (pas de mise en tampon pour `text/event-stream`).
-- **Tests** : la couche `LlmClient` se prête à un faux client ; le parseur
-  SSE à des tests unitaires sur des découpages arbitraires.
-
-### Commandes pour expérimenter
+### Vérifications manuelles
 
 ```bash
 npm run dev          # api :3000 + web :5173
@@ -1191,6 +1183,16 @@ curl -i -X POST http://localhost:3000/api/chat \
 Exercice final : lance le `curl -N`, puis coupe-le avec Ctrl+C après le
 premier delta. Va lire le log de l'API et trouve la ligne qui prouve que le
 modèle a été arrêté. Tu viens de vérifier la Leçon 8 toi-même.
+
+### Pour aller plus loin (non fait, volontairement)
+
+- **Historique trop long** : la limite est de 50 messages. Il faudra un jour
+  tronquer côté front ou résumer côté serveur.
+- **Production** : Vite disparaît. Il faut servir le build statique et faire
+  pointer `/api` vers Fastify via un reverse proxy, en gardant le streaming
+  (pas de mise en tampon pour `text/event-stream`).
+- **Tests** : la couche `LlmClient` se prête à un faux client ; le parseur
+  SSE à des tests unitaires sur des découpages arbitraires.
 
 ---
 

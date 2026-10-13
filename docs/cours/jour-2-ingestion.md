@@ -1,11 +1,14 @@
-# Cours : l'ingestion d'un RAG (jour 2)
+# Jour 2 · Cours 1 — L'ingestion d'un RAG
 
-> **Prérequis.** Avoir suivi `flux-dun-message.md` et `appel-doutils.md`. Le
-> chatbot tourne : `useChat` → `POST /api/chat` → `LlmClient.streamChat`,
-> avec tool use. Ce cours **n'y touche pas**. Il construit, à côté du
-> serveur, la première moitié d'un RAG : transformer des PDF en morceaux de
-> texte vectorisés, stockés dans Postgres, et vérifier qu'on sait les
-> retrouver.
+> [Sommaire](README.md) · Précédent : [Jour 1 · Cours 2 — Le tool use](jour-1-appel-doutils.md)
+
+> **Prérequis.** Avoir suivi les deux cours du jour 1,
+> [le flux d'un message](jour-1-flux-dun-message.md) et
+> [le tool use](jour-1-appel-doutils.md). Le chatbot tourne :
+> `useChat` → `POST /api/chat` → `LlmClient.streamChat`, avec tool use.
+> Ce cours **n'y touche pas**. Il construit, à côté du serveur, la
+> première moitié d'un RAG : transformer des PDF en morceaux de texte
+> vectorisés, stockés dans Postgres, et vérifier qu'on sait les retrouver.
 >
 > **Le fil rouge.** Un PDF de 6 pages, `guide-rh.pdf`, déposé dans
 > `apps/api/data/pdfs/`. Nous le suivrons jusqu'à ce que la question

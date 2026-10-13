@@ -1,7 +1,10 @@
-# Cours : donner des outils à un chatbot (tool use)
+# Jour 1 · Cours 2 — Donner des outils à un chatbot (tool use)
 
-> **Prérequis.** Avoir suivi le cours précédent, `flux-dun-message.md`. On y
-> a construit un chatbot en streaming : `useChat` → `POST /api/chat` →
+> [Sommaire](README.md) · Précédent : [Jour 1 · Cours 1 — Le flux d'un message](jour-1-flux-dun-message.md) · Suivant : [Jour 2 · Cours 1 — L'ingestion d'un RAG](jour-2-ingestion.md)
+
+> **Prérequis.** Avoir suivi le cours précédent,
+> [le flux d'un message](jour-1-flux-dun-message.md). On y a construit un
+> chatbot en streaming : `useChat` → `POST /api/chat` →
 > `LlmClient.streamChat` → Anthropic, avec des événements SSE `delta`, `done`
 > et `error`. Ce cours part de cet état et ajoute une seule capacité :
 > le modèle peut **demander l'exécution de fonctions** que nous écrivons.
