@@ -11,3 +11,7 @@ dist/
 *.log
 .idea/
 .vscode/
+
+# PDF du RAG : déposés à la main, jamais versionnés
+apps/api/data/pdfs/*
+!apps/api/data/pdfs/.gitkeep

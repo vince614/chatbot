@@ -1,0 +1,25 @@
+# Infrastructure locale du chatbot.
+#   docker compose up -d      → démarre Postgres + pgvector en arrière-plan
+#   docker compose down       → l'arrête (les données restent dans le volume)
+#   docker compose down -v    → l'arrête ET efface les données
+services:
+  postgres:
+    # Image officielle de pgvector : Postgres 17 avec l'extension déjà compilée.
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: rag
+      POSTGRES_DB: rag
+    # 5433 côté machine pour ne pas entrer en conflit avec un Postgres local sur 5432.
+    ports:
+      - "5433:5432"
+    volumes:
+      - rag-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag -d rag"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  rag-data:

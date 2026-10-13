@@ -1,0 +1,128 @@
+import type pg from "pg";
+
+import type { Chunk } from "../text/types.js";
+
+/**
+ * Toutes les requêtes SQL du RAG. Les scripts orchestrent, ce fichier parle
+ * à la base.
+ */
+
+/** pgvector lit un vecteur sous forme de texte : '[0.12,-0.03,…]'. */
+export function toSqlVector(vector: number[]): string {
+  return `[${vector.join(",")}]`;
+}
+
+/** Empreinte de chaque document déjà ingéré, par nom de fichier. */
+export async function getDocumentHashes(pool: pg.Pool): Promise<Map<string, string>> {
+  const { rows } = await pool.query<{ file_name: string; sha256: string }>(
+    "SELECT file_name, sha256 FROM documents",
+  );
+  return new Map(rows.map((row) => [row.file_name, row.sha256]));
+}
+
+export interface DocumentToStore {
+  fileName: string;
+  sha256: string;
+  chunks: Chunk[];
+  /** Un vecteur par chunk, dans le même ordre. */
+  embeddings: number[][];
+}
+
+/**
+ * Remplace un document et tous ses chunks, en une seule transaction :
+ * soit tout est écrit, soit rien ne change. Une recherche lancée pendant
+ * l'ingestion voit l'ancienne version complète, jamais un mélange.
+ *
+ * Les embeddings sont déjà calculés : la transaction ne contient que des
+ * écritures rapides, aucun appel réseau vers le fournisseur.
+ */
+export async function replaceDocument(pool: pg.Pool, doc: DocumentToStore): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Les anciens chunks partent avec le document (ON DELETE CASCADE).
+    await client.query("DELETE FROM documents WHERE file_name = $1", [doc.fileName]);
+
+    const { rows } = await client.query<{ id: string }>(
+      "INSERT INTO documents (file_name, sha256) VALUES ($1, $2) RETURNING id",
+      [doc.fileName, doc.sha256],
+    );
+    const documentId = rows[0]!.id;
+
+    // Une seule requête pour tous les chunks : chaque colonne est envoyée
+    // comme un tableau, et unnest() les « dézippe » en lignes.
+    await client.query(
+      `INSERT INTO chunks (document_id, chunk_index, page_start, page_end, content, token_count, embedding)
+       SELECT $1, t.chunk_index, t.page_start, t.page_end, t.content, t.token_count, t.embedding::vector
+       FROM unnest($2::int[], $3::int[], $4::int[], $5::text[], $6::int[], $7::text[])
+         AS t(chunk_index, page_start, page_end, content, token_count, embedding)`,
+      [
+        documentId,
+        doc.chunks.map((c) => c.index),
+        doc.chunks.map((c) => c.pageStart),
+        doc.chunks.map((c) => c.pageEnd),
+        doc.chunks.map((c) => c.content),
+        doc.chunks.map((c) => c.tokenCount),
+        doc.embeddings.map(toSqlVector),
+      ],
+    );
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export interface SearchResult {
+  fileName: string;
+  chunkIndex: number;
+  pageStart: number;
+  pageEnd: number;
+  content: string;
+  /** Similarité cosinus : 1 = même direction, 0 = sans rapport. */
+  score: number;
+}
+
+/**
+ * Les `limit` chunks les plus proches du vecteur de la question.
+ *
+ * <=> est l'opérateur « distance cosinus » de pgvector (1 − similarité) :
+ * on trie par distance croissante et on affiche 1 − distance comme score.
+ * Le ORDER BY porte sur l'expression brute (et non sur l'alias score) pour
+ * qu'un futur index HNSW en vector_cosine_ops puisse être utilisé.
+ */
+export const SEARCH_SQL = `
+SELECT d.file_name,
+       c.chunk_index,
+       c.page_start,
+       c.page_end,
+       c.content,
+       1 - (c.embedding <=> $1::vector) AS score
+FROM chunks c
+JOIN documents d ON d.id = c.document_id
+ORDER BY c.embedding <=> $1::vector
+LIMIT $2`;
+
+export async function searchChunks(pool: pg.Pool, queryVector: number[], limit: number): Promise<SearchResult[]> {
+  const { rows } = await pool.query<{
+    file_name: string;
+    chunk_index: number;
+    page_start: number;
+    page_end: number;
+    content: string;
+    score: number;
+  }>(SEARCH_SQL, [toSqlVector(queryVector), limit]);
+
+  return rows.map((row) => ({
+    fileName: row.file_name,
+    chunkIndex: row.chunk_index,
+    pageStart: row.page_start,
+    pageEnd: row.page_end,
+    content: row.content,
+    score: Number(row.score),
+  }));
+}

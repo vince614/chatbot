@@ -23,23 +23,8 @@ const ENV_FILE = fileURLToPath(new URL("../.env", import.meta.url));
  * variables obligatoires sont présentes. Lance une ConfigError sinon.
  */
 export function loadConfig(): Config {
-  try {
-    loadEnvFile(ENV_FILE);
-  } catch (error) {
-    // Fichier absent : on tolère, les variables peuvent venir de l'environnement.
-    if (!isFileNotFound(error)) throw error;
-  }
-
-  const missing = REQUIRED_VARS.filter((name) => !process.env[name]?.trim());
-  if (missing.length > 0) {
-    throw new ConfigError(
-      [
-        `Variable(s) d'environnement manquante(s) : ${missing.join(", ")}.`,
-        `Copie apps/api/.env.example vers apps/api/.env et renseigne les valeurs.`,
-        `Fichier attendu : ${ENV_FILE}`,
-      ].join("\n"),
-    );
-  }
+  loadDotEnv();
+  requireEnv(REQUIRED_VARS);
 
   return {
     port: Number(process.env["PORT"] ?? 3000),
@@ -49,6 +34,30 @@ export function loadConfig(): Config {
       model: process.env["LLM_MODEL"]!.trim(),
     },
   };
+}
+
+/** Charge apps/api/.env dans process.env. Un fichier absent est toléré. */
+export function loadDotEnv(): void {
+  try {
+    loadEnvFile(ENV_FILE);
+  } catch (error) {
+    // Fichier absent : on tolère, les variables peuvent venir de l'environnement.
+    if (!isFileNotFound(error)) throw error;
+  }
+}
+
+/** Lance une ConfigError listant les variables absentes ou vides. */
+export function requireEnv(names: readonly string[]): void {
+  const missing = names.filter((name) => !process.env[name]?.trim());
+  if (missing.length > 0) {
+    throw new ConfigError(
+      [
+        `Variable(s) d'environnement manquante(s) : ${missing.join(", ")}.`,
+        `Copie apps/api/.env.example vers apps/api/.env et renseigne les valeurs.`,
+        `Fichier attendu : ${ENV_FILE}`,
+      ].join("\n"),
+    );
+  }
 }
 
 function isFileNotFound(error: unknown): boolean {
