@@ -38,21 +38,22 @@ cours d'une même journée est donné par ce sommaire.
 1. **Plan du cours** : un tableau `Leçon | Question à laquelle elle répond`.
 2. **Leçon 0** : la vue d'ensemble. L'idée en une phrase, ce que nous avons
    ajouté (fichiers, commandes).
-3. **Leçons 1 à n** : une leçon par pièce du code. Chacune :
-   - part d'un **problème** (« Le problème ») ;
-   - montre le **vrai code** du dépôt (« Le code : `chemin/fichier.ts` »),
-     copié tel quel, par extraits ;
-   - l'**explique ligne par ligne**, en s'appuyant sur le fil rouge et sur
-     des valeurs réellement observées ;
-   - cite les **alternatives écartées**, et quand elles seraient meilleures ;
-   - se termine par un encadré `> **À retenir**` et 2 ou 3 **Questions**.
-4. **Avant-dernière leçon : « Quand ça se passe mal »**. Chaque cas
-   d'erreur, du plus bénin au plus sérieux, et la hiérarchie de leur
-   traitement.
+3. **Leçons 1 à n** : une leçon par idée importante, **courte**. Chacune :
+   - pose le **problème** en deux ou trois phrases ;
+   - montre **un seul extrait** du vrai code, celui qui porte l'idée (pas
+     tout le fichier, pas chaque fonction) ;
+   - en tire **trois à cinq points clés**, appuyés sur des valeurs réellement
+     observées ;
+   - se termine par un encadré `> **À retenir**` et une ou deux **Questions**.
+   Les alternatives ne sont citées que si elles éclairent un choix.
+4. **Avant-dernière leçon : « Quand ça se passe mal »** : un tableau
+   cas → ce qui se passe.
 5. **Dernière leçon : « Synthèse »**, dans cet ordre :
-   - le voyage complet du fil rouge (tableau `# | Où | Quoi | Fichier`) ;
-   - les six idées à emporter ;
+   - les idées à emporter ;
    - **Vérifications manuelles** : commandes à lancer et ce qu'on doit voir ;
    - **Pour aller plus loin (non fait, volontairement)**.
-6. **Corrigé des questions**, regroupé à la fin, leçon par leçon
-   (« Essaie d'abord, compare ensuite »).
+6. **Corrigé des questions**, regroupé à la fin, en une ou deux phrases par
+   réponse.
+
+À partir du cours « La réponse sourcée », les cours sont volontairement plus
+courts : expliquer tout le code noie l'essentiel.
