@@ -1,6 +1,6 @@
 # Jour 1 · Cours 1 — Construire un chatbot en streaming avec React, Fastify et un LLM
 
-> [Sommaire](README.md) · Suivant : [Jour 1 · Cours 2 — Le tool use](jour-1-appel-doutils.md)
+> [Sommaire](README.md) · Suivant : [Jour 1 · Cours 2 — Le tool use](jour-1-appel-doutils.md) · [Approfondissement : le code](approfondissement/jour-1-flux-dun-message.md)
 
 > **À qui s'adresse ce cours.** À un étudiant qui connaît les bases de
 > JavaScript, de React et de Node, mais qui n'a jamais branché un modèle de
@@ -394,3 +394,11 @@ coupe le modèle, pour toute fermeture, pas seulement Stop.
 
 **L7.2** Une bulle assistant vide resterait, et le prochain envoi serait
 refusé par Zod (« Le contenu est vide ») avec un 400 incompréhensible.
+
+---
+
+## Pour aller plus loin dans le code
+
+Ce cours reste volontairement court. Pour voir **comment** le code est écrit,
+fichier par fichier et fonction par fonction, lis
+[l'approfondissement](approfondissement/jour-1-flux-dun-message.md).

@@ -1,6 +1,6 @@
 # Jour 1 · Cours 2 — Donner des outils à un chatbot (tool use)
 
-> [Sommaire](README.md) · Précédent : [Jour 1 · Cours 1 — Le flux d'un message](jour-1-flux-dun-message.md) · Suivant : [Jour 2 · Cours 1 — L'ingestion d'un RAG](jour-2-ingestion.md)
+> [Sommaire](README.md) · Précédent : [Jour 1 · Cours 1 — Le flux d'un message](jour-1-flux-dun-message.md) · Suivant : [Jour 2 · Cours 1 — L'ingestion d'un RAG](jour-2-ingestion.md) · [Approfondissement : le code](approfondissement/jour-1-appel-doutils.md)
 
 > **Prérequis.** Avoir suivi [le flux d'un message](jour-1-flux-dun-message.md) :
 > un chatbot en streaming `useChat` → `POST /api/chat` → `LlmClient.streamChat`
@@ -388,3 +388,11 @@ résultat d'outil vient du serveur, dans cette requête.
 **L6.1** Le message générique protège des fuites techniques ; le plafond est
 une limite que nous avons choisie, et le dire aide l'utilisateur à
 reformuler plutôt qu'à réessayer en boucle.
+
+---
+
+## Pour aller plus loin dans le code
+
+Ce cours reste volontairement court. Pour voir **comment** le code est écrit,
+fichier par fichier et fonction par fonction, lis
+[l'approfondissement](approfondissement/jour-1-appel-doutils.md).

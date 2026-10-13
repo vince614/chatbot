@@ -1,6 +1,6 @@
 # Jour 2 · Cours 1 — L'ingestion d'un RAG
 
-> [Sommaire](README.md) · Précédent : [Jour 1 · Cours 2 — Le tool use](jour-1-appel-doutils.md) · Suivant : [Jour 2 · Cours 2 — La réponse sourcée](jour-2-recherche-reponse.md)
+> [Sommaire](README.md) · Précédent : [Jour 1 · Cours 2 — Le tool use](jour-1-appel-doutils.md) · Suivant : [Jour 2 · Cours 2 — La réponse sourcée](jour-2-recherche-reponse.md) · [Approfondissement : le code](approfondissement/jour-2-ingestion.md)
 
 > **Prérequis.** Les deux cours du jour 1. Le chatbot tourne avec tool use, et
 > ce cours **n'y touche pas** : il construit à côté la première moitié d'un
@@ -448,3 +448,11 @@ répond, et non des textes qui lui ressemblent.
 
 **L9.1** Pour l'idempotence : sans empreinte en base, chaque `npm run ingest`
 le retraiterait. Enregistré, il est ignoré tant qu'il ne change pas.
+
+---
+
+## Pour aller plus loin dans le code
+
+Ce cours reste volontairement court. Pour voir **comment** le code est écrit,
+fichier par fichier et fonction par fonction, lis
+[l'approfondissement](approfondissement/jour-2-ingestion.md).

@@ -5,13 +5,13 @@ dans l'ordre : chacun part de l'état du code laissé par le précédent.
 
 ## Sommaire
 
-| Jour | Cours | Sujet | Ce qu'on construit |
-| --- | --- | --- | --- |
-| 1 | 1 | [Le flux d'un message](jour-1-flux-dun-message.md) | Monorepo, secret côté serveur, `LlmClient`, streaming SSE de Fastify jusqu'à React |
-| 1 | 2 | [Le tool use](jour-1-appel-doutils.md) | Format neutre, reconstitution d'un appel en streaming, registre d'outils, boucle |
-| 2 | 1 | [L'ingestion d'un RAG](jour-2-ingestion.md) | Postgres + pgvector, extraction et découpage de PDF, embeddings Voyage, ingestion idempotente, recherche |
-| 2 | 2 | [La réponse sourcée](jour-2-recherche-reponse.md) | `retrieve`, prompt RAG et injection, branchement sur `/chat`, événement `sources`, citations cliquables |
-| 2 | 3 | [Le jeu de test](jour-2-jeu-de-test.md) | 20 questions typées, runs comparables, notation manuelle, erreur de recherche ou de génération |
+| Jour | Cours | Sujet | Ce qu'on construit | Le code expliqué |
+| --- | --- | --- | --- | --- |
+| 1 | 1 | [Le flux d'un message](jour-1-flux-dun-message.md) | Monorepo, secret côté serveur, `LlmClient`, streaming SSE de Fastify jusqu'à React | [approfondissement](approfondissement/jour-1-flux-dun-message.md) |
+| 1 | 2 | [Le tool use](jour-1-appel-doutils.md) | Format neutre, reconstitution d'un appel en streaming, registre d'outils, boucle | [approfondissement](approfondissement/jour-1-appel-doutils.md) |
+| 2 | 1 | [L'ingestion d'un RAG](jour-2-ingestion.md) | Postgres + pgvector, extraction et découpage de PDF, embeddings Voyage, ingestion idempotente, recherche | [approfondissement](approfondissement/jour-2-ingestion.md) |
+| 2 | 2 | [La réponse sourcée](jour-2-recherche-reponse.md) | `retrieve`, prompt RAG et injection, branchement sur `/chat`, événement `sources`, citations cliquables | [approfondissement](approfondissement/jour-2-recherche-reponse.md) |
+| 2 | 3 | [Le jeu de test](jour-2-jeu-de-test.md) | 20 questions typées, runs comparables, notation manuelle, erreur de recherche ou de génération | [approfondissement](approfondissement/jour-2-jeu-de-test.md) |
 
 ## La trame commune
 
@@ -56,5 +56,23 @@ cours d'une même journée est donné par ce sommaire.
 6. **Corrigé des questions**, regroupé à la fin, en une ou deux phrases par
    réponse.
 
-À partir du cours « La réponse sourcée », les cours sont volontairement plus
-courts : expliquer tout le code noie l'essentiel.
+Les cours sont volontairement courts : expliquer tout le code noie
+l'essentiel.
+
+## L'approfondissement
+
+Chaque cours a un compagnon dans `approfondissement/`, du même nom, qui
+explique le code **tel qu'il est aujourd'hui** dans le dépôt :
+
+1. **Carte des fichiers** : fichier, rôle, leçon du cours concernée.
+2. **Le parcours dans le code** : quelle fonction appelle quelle autre, du
+   début à la fin du fil rouge.
+3. **Un chapitre par fichier**, et dans chacun, par fonction importante :
+   l'extrait exact, **ce que fait le code** étape par étape, puis **pourquoi**
+   c'est écrit ainsi.
+4. **Pour explorer toi-même** : où mettre un `console.log`, quoi lancer, quoi
+   observer.
+
+Pas de questions ni de corrigé : c'est un document de référence, à lire
+fichier ouvert à côté. Le cours est lié à son approfondissement sous le titre
+et à la fin.

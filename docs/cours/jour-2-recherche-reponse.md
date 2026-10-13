@@ -1,6 +1,6 @@
 # Jour 2 · Cours 2 — Répondre à partir des documents, en citant ses sources
 
-> [Sommaire](README.md) · Précédent : [Jour 2 · Cours 1 — L'ingestion d'un RAG](jour-2-ingestion.md) · Suivant : [Jour 2 · Cours 3 — Le jeu de test](jour-2-jeu-de-test.md)
+> [Sommaire](README.md) · Précédent : [Jour 2 · Cours 1 — L'ingestion d'un RAG](jour-2-ingestion.md) · Suivant : [Jour 2 · Cours 3 — Le jeu de test](jour-2-jeu-de-test.md) · [Approfondissement : le code](approfondissement/jour-2-recherche-reponse.md)
 
 > **Prérequis.** [L'ingestion d'un RAG](jour-2-ingestion.md) : les PDF sont
 > découpés, vectorisés et stockés, et `npm run search` sait retrouver des
@@ -349,3 +349,11 @@ l'utilisateur a vraiment demandé.
 
 **L5.1** Deux éléments doivent pouvoir ouvrir une source : son résumé et la
 pastille dans le texte. Un seul état React évite deux vérités.
+
+---
+
+## Pour aller plus loin dans le code
+
+Ce cours reste volontairement court. Pour voir **comment** le code est écrit,
+fichier par fichier et fonction par fonction, lis
+[l'approfondissement](approfondissement/jour-2-recherche-reponse.md).

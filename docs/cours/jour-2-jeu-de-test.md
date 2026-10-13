@@ -1,6 +1,6 @@
 # Jour 2 · Cours 3 — Mesurer la qualité avec un jeu de test
 
-> [Sommaire](README.md) · Précédent : [Jour 2 · Cours 2 — La réponse sourcée](jour-2-recherche-reponse.md)
+> [Sommaire](README.md) · Précédent : [Jour 2 · Cours 2 — La réponse sourcée](jour-2-recherche-reponse.md) · [Approfondissement : le code](approfondissement/jour-2-jeu-de-test.md)
 
 > **Prérequis.** [La réponse sourcée](jour-2-recherche-reponse.md) : le chat
 > cherche, répond à partir des documents et cite ses sources.
@@ -197,3 +197,11 @@ produits dans les mêmes conditions.
 **L3.1** Les chunks récupérés : la page 1 est-elle dans la liste ? Si oui,
 c'est l'extraction du tableau qui a brouillé le texte ; si non, c'est le
 classement de la recherche. Le prompt n'y est pour rien.
+
+---
+
+## Pour aller plus loin dans le code
+
+Ce cours reste volontairement court. Pour voir **comment** le code est écrit,
+fichier par fichier et fonction par fonction, lis
+[l'approfondissement](approfondissement/jour-2-jeu-de-test.md).
