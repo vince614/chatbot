@@ -32,6 +32,13 @@ export type LlmEvent =
   /** Une demande d'exécution d'outil, complète (les arguments sont déjà parsés). */
   | { type: "tool_call"; id: string; name: string; input: unknown };
 
+/**
+ * Niveau d'effort du modèle (profondeur de réflexion). Le modèle actuel n'accepte
+ * pas de température : l'effort est le seul réglage, et l'épingler rend les
+ * réponses plus stables d'une exécution à l'autre.
+ */
+export type LlmEffort = "low" | "medium" | "high" | "xhigh" | "max";
+
 export interface StreamChatParams {
   /** Instructions système (optionnel). */
   system?: string;
@@ -41,6 +48,8 @@ export interface StreamChatParams {
   tools?: ToolDefinition[];
   /** Permet d'annuler la génération en cours (déconnexion client, Ctrl+C…). */
   signal?: AbortSignal;
+  /** Effort imposé ; sinon, celui du fournisseur par défaut. */
+  effort?: LlmEffort;
 }
 
 /**

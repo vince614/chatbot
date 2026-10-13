@@ -1,0 +1,168 @@
+[
+  {
+    "id": "q01",
+    "type": "factuelle",
+    "question": "On travaille combien d'heures par semaine chez Lumen ?",
+    "reponse_attendue": "37 heures par semaine, réparties du lundi au vendredi.",
+    "sources_attendues": [{ "fichier": "reglement-interieur.pdf", "pages": [1] }],
+    "avec_reponse": true
+  },
+  {
+    "id": "q02",
+    "type": "factuelle",
+    "question": "En déplacement, je peux dépenser combien au maximum pour une nuit d'hôtel à Paris ?",
+    "reponse_attendue": "120 euros par nuit à Paris, petit-déjeuner compris (90 euros en province).",
+    "sources_attendues": [{ "fichier": "reglement-interieur.pdf", "pages": [3] }],
+    "avec_reponse": true
+  },
+  {
+    "id": "q03",
+    "type": "factuelle",
+    "question": "Sur quel système tourne le serveur de prod de DiscordInvites ?",
+    "reponse_attendue": "Sur un VPS sous Debian 13.",
+    "sources_attendues": [{ "fichier": "discordinvites.pdf", "pages": [2] }],
+    "avec_reponse": true
+  },
+  {
+    "id": "q04",
+    "type": "factuelle",
+    "question": "Quels concurrents DiscordInvites a-t-il étudiés ?",
+    "reponse_attendue": "Trois annuaires de serveurs Discord : Disboard, Top.gg et Discadia.",
+    "sources_attendues": [{ "fichier": "discordinvites.pdf", "pages": [3] }],
+    "avec_reponse": true
+  },
+  {
+    "id": "q05",
+    "type": "factuelle",
+    "question": "L'interface du site est dispo dans quelle autre langue ?",
+    "reponse_attendue": "En japonais : le fichier de localisation a été intégralement traduit.",
+    "sources_attendues": [{ "fichier": "discordinvites.pdf", "pages": [4] }],
+    "avec_reponse": true
+  },
+  {
+    "id": "q06",
+    "type": "reformulee",
+    "question": "Je bosse depuis mon salon : la boîte me file un petit quelque chose pour mes factures ?",
+    "reponse_attendue": "Oui : une indemnité de 2,50 euros par jour télétravaillé, plafonnée à 50 euros par mois, versée sur la paie du mois suivant.",
+    "sources_attendues": [{ "fichier": "reglement-interieur.pdf", "pages": [2] }],
+    "avec_reponse": true
+  },
+  {
+    "id": "q07",
+    "type": "reformulee",
+    "question": "Je vais être papa le mois prochain, j'ai droit à des jours off en plus ?",
+    "reponse_attendue": "Oui : trois jours pour la naissance, sans perte de salaire, en plus du congé de paternité légal.",
+    "sources_attendues": [{ "fichier": "reglement-interieur.pdf", "pages": [2] }],
+    "avec_reponse": true
+  },
+  {
+    "id": "q08",
+    "type": "reformulee",
+    "question": "Je crois que j'ai cliqué sur un lien piégé, je fais quoi en tout premier ?",
+    "reponse_attendue": "Débrancher le câble réseau et couper le Wi-Fi sans éteindre le poste, puis prévenir le support informatique au poste 4242.",
+    "sources_attendues": [{ "fichier": "reglement-interieur.pdf", "pages": [3] }],
+    "avec_reponse": true
+  },
+  {
+    "id": "q09",
+    "type": "reformulee",
+    "question": "Sur DiscordInvites, spammer une commande suffit pour grimper en haut de la liste ?",
+    "reponse_attendue": "Non : DiscordInvites remplace la mécanique du « bump » par un score fondé sur la qualité des serveurs (positionnement « anti-bump »).",
+    "sources_attendues": [{ "fichier": "discordinvites.pdf", "pages": [2, 3] }],
+    "avec_reponse": true
+  },
+  {
+    "id": "q10",
+    "type": "identifiant",
+    "question": "C'est quoi le hostname de la machine de prod ?",
+    "reponse_attendue": "ns338233, le VPS sous Debian 13 qui fait tourner DiscordInvites V3.",
+    "sources_attendues": [{ "fichier": "discordinvites.pdf", "pages": [2] }],
+    "avec_reponse": true
+  },
+  {
+    "id": "q11",
+    "type": "identifiant",
+    "question": "Comment s'appelle la constante qui sert à ranger les serveurs par jeu ?",
+    "reponse_attendue": "GAME_KEYWORDS : des tableaux qui associent des mots-clés à des jeux pour catégoriser les serveurs.",
+    "sources_attendues": [{ "fichier": "discordinvites.pdf", "pages": [3] }],
+    "avec_reponse": true
+  },
+  {
+    "id": "q12",
+    "type": "identifiant",
+    "question": "Sous quel domaine le projet vivait-il avant de s'appeler DiscordInvites ?",
+    "reponse_attendue": "union.ovh ; le projet remonte à 2015.",
+    "sources_attendues": [{ "fichier": "discordinvites.pdf", "pages": [1] }],
+    "avec_reponse": true
+  },
+  {
+    "id": "q13",
+    "type": "tableau",
+    "question": "Lequel des deux cofondateurs gère les sauvegardes et les déploiements ?",
+    "reponse_attendue": "Vince (Vincent Vfy), dont le périmètre couvre le backend, l'API, la base de données et l'infrastructure.",
+    "sources_attendues": [{ "fichier": "discordinvites.pdf", "pages": [1] }],
+    "avec_reponse": true
+  },
+  {
+    "id": "q14",
+    "type": "tableau",
+    "question": "C'est quoi la stack technique complète de DiscordInvites ?",
+    "reponse_attendue": "Symfony 7 (PHP) pour le backend et l'API, MariaDB, React puis Next.js pour le frontend, Docker, un bot Discord et rclone pour les sauvegardes.",
+    "sources_attendues": [{ "fichier": "discordinvites.pdf", "pages": [2] }],
+    "avec_reponse": true
+  },
+  {
+    "id": "q15",
+    "type": "combinaison",
+    "question": "Pourquoi le front est-il passé sur Next.js, et quels modes de génération de pages ont été envisagés ?",
+    "reponse_attendue": "Pour le référencement : le rendu côté serveur facilite l'indexation. La génération statique (SSG) et la régénération statique incrémentale (ISR) ont été explorées.",
+    "sources_attendues": [
+      { "fichier": "discordinvites.pdf", "pages": [1] },
+      { "fichier": "discordinvites.pdf", "pages": [3] }
+    ],
+    "avec_reponse": true
+  },
+  {
+    "id": "q16",
+    "type": "combinaison",
+    "question": "Dans quels contextes la CNIL est-elle mentionnée dans les documents ?",
+    "reponse_attendue": "Chez Lumen, l'entreprise doit notifier la CNIL sous 72 heures si des données personnelles de clients ont été exposées. Chez DiscordInvites, la CNIL encadre le traitement des données collectées pour vérifier l'âge.",
+    "sources_attendues": [
+      { "fichier": "reglement-interieur.pdf", "pages": [4] },
+      { "fichier": "discordinvites.pdf", "pages": [3] }
+    ],
+    "avec_reponse": true
+  },
+  {
+    "id": "q17",
+    "type": "sans_reponse",
+    "question": "Quels sont les critères exacts du score de qualité de DiscordInvites ?",
+    "reponse_attendue": "Je ne sais pas : le document précise que les critères du score ne sont pas décrits.",
+    "sources_attendues": [],
+    "avec_reponse": false
+  },
+  {
+    "id": "q18",
+    "type": "sans_reponse",
+    "question": "Quel nouveau nom a finalement été retenu pour remplacer DiscordInvites ?",
+    "reponse_attendue": "Je ne sais pas : trois domaines sont candidats, mais aucun choix n'est arrêté.",
+    "sources_attendues": [],
+    "avec_reponse": false
+  },
+  {
+    "id": "q19",
+    "type": "sans_reponse",
+    "question": "Combien valent les tickets restaurant chez Lumen ?",
+    "reponse_attendue": "Je ne sais pas : les documents ne parlent pas de tickets restaurant.",
+    "sources_attendues": [],
+    "avec_reponse": false
+  },
+  {
+    "id": "q20",
+    "type": "sans_reponse",
+    "question": "Qui est le coordinateur santé et sécurité sur le site de Nantes ?",
+    "reponse_attendue": "Je ne sais pas : seule la coordinatrice de Lyon est indiquée.",
+    "sources_attendues": [],
+    "avec_reponse": false
+  }
+]

@@ -20,6 +20,17 @@ export async function getDocumentHashes(pool: pg.Pool): Promise<Map<string, stri
   return new Map(rows.map((row) => [row.file_name, row.sha256]));
 }
 
+/** Les documents en base, avec leur empreinte et leur nombre de chunks. */
+export async function listDocuments(
+  pool: pg.Pool,
+): Promise<{ fileName: string; sha256: string; chunks: number }[]> {
+  const { rows } = await pool.query<{ file_name: string; sha256: string; chunks: string }>(`
+    SELECT d.file_name, d.sha256, count(c.id) AS chunks
+    FROM documents d LEFT JOIN chunks c ON c.document_id = d.id
+    GROUP BY d.id ORDER BY d.file_name`);
+  return rows.map((row) => ({ fileName: row.file_name, sha256: row.sha256, chunks: Number(row.chunks) }));
+}
+
 export interface DocumentToStore {
   fileName: string;
   sha256: string;

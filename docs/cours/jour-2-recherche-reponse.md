@@ -1,6 +1,6 @@
 # Jour 2 · Cours 2 — Répondre à partir des documents, en citant ses sources
 
-> [Sommaire](README.md) · Précédent : [Jour 2 · Cours 1 — L'ingestion d'un RAG](jour-2-ingestion.md)
+> [Sommaire](README.md) · Précédent : [Jour 2 · Cours 1 — L'ingestion d'un RAG](jour-2-ingestion.md) · Suivant : [Jour 2 · Cours 3 — Le jeu de test](jour-2-jeu-de-test.md)
 
 > **Prérequis.** [L'ingestion d'un RAG](jour-2-ingestion.md) : les PDF sont
 > découpés, vectorisés et stockés, et `npm run search` sait retrouver des

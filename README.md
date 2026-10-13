@@ -86,6 +86,17 @@ npm run ask -- "ma question" [--k 5]      # prompt RAG assemblé, réponse, sour
 npm run rag:sample-pdf                    # génère data/pdfs/reglement-interieur.pdf (document de test fictif)
 ```
 
+### Jeu de test
+
+20 questions typées dans `apps/api/evals/questions.json` (versionné). Les runs
+vont dans `apps/api/evals/runs/` (ignoré par git : ils contiennent des
+extraits des documents).
+
+```bash
+npm run eval:run [-- --only q01,q13]      # rejoue les questions → <date>.json, <date>.md, <date>.notes.json
+npm run eval:score -- <date>              # additionne les notes saisies à la main, détail par type, échecs
+```
+
 Le pipeline : extraction page par page (pdf.js), nettoyage (en-têtes et pieds
 répétés, césures, ligatures), découpage en chunks d'environ 500 tokens avec
 15 % de recouvrement et les numéros de page, embeddings par lots avec
@@ -136,6 +147,7 @@ apps/api/src/
    ├─ embeddings/           EmbeddingClient + fabrique ; seul voyage.ts connaît l'API Voyage
    ├─ db/                   migrations, requêtes SQL
    └─ scripts/              migrate, preview, embed-check, ingest, search, ask, sample-pdf
+apps/api/src/evals/         run, rapport à noter, score (jeu de test)
 apps/web/src/chat/          UI du chat, hook useChat, parseur SSE, citations et sources, journal d'événements
 ```
 
@@ -155,3 +167,4 @@ appuyées sur le code, questions et corrigé.
 | `docs/cours/jour-1-appel-doutils.md` | Jour 1 · Le tool use : format neutre, boucle, registre d'outils |
 | `docs/cours/jour-2-ingestion.md` | Jour 2 · L'ingestion d'un RAG : pgvector, découpage, embeddings, recherche |
 | `docs/cours/jour-2-recherche-reponse.md` | Jour 2 · La réponse sourcée : `retrieve`, prompt RAG, `/chat`, citations dans l'interface |
+| `docs/cours/jour-2-jeu-de-test.md` | Jour 2 · Le jeu de test : questions, runs, notation, lecture des échecs |

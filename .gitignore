@@ -15,3 +15,6 @@ dist/
 # PDF du RAG : déposés à la main, jamais versionnés
 apps/api/data/pdfs/*
 !apps/api/data/pdfs/.gitkeep
+
+# Runs d'évaluation : réponses du modèle, donc extraits des documents
+apps/api/evals/runs/

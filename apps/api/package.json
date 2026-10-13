@@ -14,7 +14,9 @@
     "ingest": "tsx src/rag/scripts/ingest.ts",
     "search": "tsx src/rag/scripts/search.ts",
     "rag:sample-pdf": "tsx src/rag/scripts/make-sample-pdf.ts",
-    "ask": "tsx src/rag/scripts/ask.ts"
+    "ask": "tsx src/rag/scripts/ask.ts",
+    "eval:run": "tsx src/evals/run.ts",
+    "eval:score": "tsx src/evals/score.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",

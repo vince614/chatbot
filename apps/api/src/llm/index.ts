@@ -5,6 +5,7 @@ export type {
   ContentPart,
   LlmClient,
   LlmClientOptions,
+  LlmEffort,
   LlmEvent,
   StreamChatParams,
   ToolDefinition,
