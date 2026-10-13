@@ -2,6 +2,8 @@ import type { ServerResponse } from "node:http";
 
 /** Les événements que le flux /api/chat peut émettre. */
 export type SseEvent =
+  /** Les passages retrouvés pour la question, envoyés avant le premier delta. */
+  | { event: "sources"; data: { sources: SourceSummary[] } }
   | { event: "delta"; data: { text: string } }
   /** Le modèle demande un outil ; émis juste avant son exécution. */
   | { event: "tool_call"; data: { name: string; input: unknown } }
@@ -11,6 +13,18 @@ export type SseEvent =
   | { event: "debug"; data: DebugEvent }
   | { event: "done"; data: Record<string, never> }
   | { event: "error"; data: { message: string } };
+
+/** Ce que le navigateur reçoit d'un passage : de quoi l'afficher, pas le chunk entier. */
+export interface SourceSummary {
+  /** Numéro sous lequel le modèle peut le citer : [1], [2]… */
+  index: number;
+  fileName: string;
+  pageStart: number;
+  pageEnd: number;
+  score: number;
+  /** Les 200 premiers caractères du passage. */
+  excerpt: string;
+}
 
 export type DebugEvent =
   | { kind: "model_request"; turn: number; payload: unknown }

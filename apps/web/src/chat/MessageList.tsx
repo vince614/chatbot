@@ -22,8 +22,8 @@ export function MessageList({ messages, status }: MessageListProps) {
         <div className="empty">
           <p className="empty__title">Pose une question pour commencer.</p>
           <p className="empty__hint">
-            Essaie « Quel jour serons-nous dans 45 jours ? » ou « Combien font 1234 × 5678 ? » pour voir les
-            outils à l'œuvre.
+            Interroge les documents, par exemple « Combien de jours de télétravail sont autorisés ? ». Les
+            outils marchent toujours : « Quel jour serons-nous dans 45 jours ? » ou « Combien font 1234 × 5678 ? ».
           </p>
         </div>
       </div>

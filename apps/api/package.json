@@ -12,7 +12,9 @@
     "rag:preview": "tsx src/rag/scripts/preview.ts",
     "rag:embed-check": "tsx src/rag/scripts/embed-check.ts",
     "ingest": "tsx src/rag/scripts/ingest.ts",
-    "search": "tsx src/rag/scripts/search.ts"
+    "search": "tsx src/rag/scripts/search.ts",
+    "rag:sample-pdf": "tsx src/rag/scripts/make-sample-pdf.ts",
+    "ask": "tsx src/rag/scripts/ask.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
@@ -24,6 +26,7 @@
   },
   "devDependencies": {
     "@types/pg": "^8.23.1",
+    "pdf-lib": "^1.17.1",
     "tsx": "^4.20.0"
   }
 }

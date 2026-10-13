@@ -2,8 +2,9 @@ import type { FastifyBaseLogger, FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
 import type { ChatMessage, ContentPart, LlmClient, LlmEvent } from "../llm/index.js";
-import { SYSTEM_PROMPT } from "../prompts/system.js";
-import { openSseStream } from "../sse.js";
+import { buildRagPrompt } from "../rag/prompt.js";
+import type { Retrieve, RetrievedChunk } from "../rag/retrieve.js";
+import { openSseStream, type SourceSummary } from "../sse.js";
 import type { ToolRegistry } from "../tools/index.js";
 
 const MAX_MESSAGES = 50;
@@ -13,6 +14,14 @@ const MAX_CONTENT_LENGTH = 8_000;
 const MAX_TOOL_TURNS = 5;
 /** Délai maximal d'exécution d'un outil. */
 const TOOL_TIMEOUT_MS = 5_000;
+/**
+ * Délai maximal de la recherche documentaire. Le client d'embeddings réessaie
+ * longtemps sur un quota dépassé (pensé pour l'ingestion) : un utilisateur qui
+ * attend une réponse ne doit pas patienter deux minutes.
+ */
+const RETRIEVAL_TIMEOUT_MS = 10_000;
+/** Longueur de l'extrait de chaque source envoyé au navigateur. */
+const EXCERPT_LENGTH = 200;
 
 // Le client n'envoie que du texte : les échanges d'outils ne vivent que le temps
 // d'une requête, côté serveur. Simplification voulue (voir apps/web/src/chat/useChat.ts).
@@ -42,13 +51,21 @@ const chatRequestSchema = z.object({
 const GENERIC_ERROR_MESSAGE = "La génération a échoué. Réessaie dans un instant.";
 const TOO_MANY_TURNS_MESSAGE =
   "Le modèle a enchaîné trop d'appels d'outils sans conclure. Réessaie en reformulant.";
+const RETRIEVAL_ERROR_MESSAGE =
+  "La recherche dans les documents est indisponible pour le moment : impossible de répondre avec des sources. Réessaie dans un instant.";
+
+/** Échec de la recherche documentaire : distinct d'un échec du modèle, pour un message dédié. */
+class RetrievalError extends Error {
+  override readonly name = "RetrievalError";
+}
 
 export interface ChatRoutesOptions {
   llm: LlmClient;
   tools: ToolRegistry;
+  retrieve: Retrieve;
 }
 
-export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { llm, tools }) => {
+export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { llm, tools, retrieve }) => {
   app.post("/chat", async (request, reply) => {
     const parsed = chatRequestSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -71,10 +88,25 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { l
     const sse = openSseStream(reply.raw);
 
     try {
+      // 1. Recherche à partir du dernier message utilisateur (garanti par le schéma).
+      const messages = parsed.data.messages;
+      const question = messages.at(-1)!.content;
+      const chunks = await searchDocuments(retrieve, question, controller.signal, request.log);
+
+      // 2. Les sources partent avant le premier delta : le navigateur peut les
+      //    rattacher à la réponse dès qu'elle commence.
+      sse.send({ event: "sources", data: { sources: toSourceSummaries(chunks) } });
+
+      // 3. Le dernier message devient « documents + question ». Les messages
+      //    précédents restent tels quels, en texte seul.
+      const prompt = buildRagPrompt(question, chunks);
+      const history: ChatMessage[] = [...messages.slice(0, -1), { role: "user", content: prompt.user }];
+
       const completed = await runConversation({
         llm,
         tools,
-        messages: parsed.data.messages,
+        system: prompt.system,
+        messages: history,
         debug: parsed.data.debug ?? false,
         signal: controller.signal,
         sse,
@@ -89,6 +121,10 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { l
     } catch (error) {
       if (controller.signal.aborted) {
         request.log.info("client déconnecté, génération annulée");
+      } else if (error instanceof RetrievalError) {
+        // Pas de réponse sans sources : on s'arrête avant d'appeler le modèle.
+        request.log.error({ reason: describeError(error.cause) }, "échec de la recherche documentaire");
+        sse.send({ event: "error", data: { message: RETRIEVAL_ERROR_MESSAGE } });
       } else {
         // Seul le message d'erreur technique est logué, jamais le contenu des messages.
         request.log.error({ reason: describeError(error) }, "échec de la génération");
@@ -100,9 +136,57 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { l
   });
 };
 
+/**
+ * Appelle retrieve avec un délai maximal, et journalise le résultat : nombre de
+ * passages, scores, durée. Jamais la question ni le contenu des passages.
+ */
+async function searchDocuments(
+  retrieve: Retrieve,
+  question: string,
+  clientSignal: AbortSignal,
+  log: FastifyBaseLogger,
+): Promise<RetrievedChunk[]> {
+  const startedAt = performance.now();
+  try {
+    const chunks = await retrieve(question, {
+      signal: AbortSignal.any([clientSignal, AbortSignal.timeout(RETRIEVAL_TIMEOUT_MS)]),
+    });
+    log.info(
+      {
+        chunks: chunks.length,
+        scores: chunks.map((chunk) => Number(chunk.score.toFixed(3))),
+        durationMs: Math.round(performance.now() - startedAt),
+      },
+      "recherche documentaire",
+    );
+    return chunks;
+  } catch (error) {
+    // Une déconnexion du client n'est pas un échec de la recherche.
+    if (clientSignal.aborted) throw error;
+    throw new RetrievalError("Recherche documentaire impossible", { cause: error });
+  }
+}
+
+/** Ce que le navigateur reçoit des passages : numéro, fichier, pages, score, début du texte. */
+function toSourceSummaries(chunks: RetrievedChunk[]): SourceSummary[] {
+  return chunks.map((chunk, i) => {
+    const text = chunk.content.replace(/\s+/g, " ").trim();
+    return {
+      index: i + 1,
+      fileName: chunk.fileName,
+      pageStart: chunk.pageStart,
+      pageEnd: chunk.pageEnd,
+      score: Number(chunk.score.toFixed(3)),
+      excerpt: text.length > EXCERPT_LENGTH ? `${text.slice(0, EXCERPT_LENGTH)}…` : text,
+    };
+  });
+}
+
 interface ConversationContext {
   llm: LlmClient;
   tools: ToolRegistry;
+  /** Prompt système : celui du RAG, construit par buildRagPrompt. */
+  system: string;
   messages: ChatMessage[];
   debug: boolean;
   signal: AbortSignal;
@@ -117,7 +201,7 @@ type ToolCall = Extract<LlmEvent, { type: "tool_call" }>;
  * outils, on les exécute, on ajoute les résultats à l'historique et on repart.
  * Renvoie true si le modèle a conclu, false si le plafond de tours est atteint.
  */
-async function runConversation({ llm, tools, messages, debug, signal, sse, log }: ConversationContext) {
+async function runConversation({ llm, tools, system, messages, debug, signal, sse, log }: ConversationContext) {
   const history: ChatMessage[] = [...messages];
   const toolDefinitions = tools.list();
 
@@ -125,7 +209,7 @@ async function runConversation({ llm, tools, messages, debug, signal, sse, log }
     let text = "";
     const toolCalls: ToolCall[] = [];
 
-    const params = { system: SYSTEM_PROMPT, messages: history, tools: toolDefinitions };
+    const params = { system, messages: history, tools: toolDefinitions };
     if (debug) {
       // Copie de l'historique : il sera muté après l'appel.
       sse.send({
@@ -192,5 +276,10 @@ async function executeToolCall(
 }
 
 function describeError(error: unknown): string {
+  // Une connexion refusée en IPv6 puis en IPv4 arrive sous forme d'AggregateError,
+  // au message vide : on décrit plutôt chacune des erreurs regroupées.
+  if (error instanceof AggregateError && error.errors.length > 0) {
+    return error.errors.map(describeError).join(" ; ");
+  }
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }

@@ -18,7 +18,9 @@
     "rag:preview": "npm run rag:preview -w apps/api --",
     "rag:embed-check": "npm run rag:embed-check -w apps/api",
     "ingest": "npm run ingest -w apps/api",
-    "search": "npm run search -w apps/api --"
+    "search": "npm run search -w apps/api --",
+    "rag:sample-pdf": "npm run rag:sample-pdf -w apps/api",
+    "ask": "npm run ask -w apps/api --"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

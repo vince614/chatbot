@@ -1,5 +1,5 @@
 import { createSseParser } from "./sse";
-import type { ChatMessage } from "./types";
+import type { ChatMessage, Source } from "./types";
 
 /** Erreur "métier" du chat, dont le message peut être affiché tel quel. */
 export class ChatError extends Error {
@@ -9,6 +9,8 @@ export class ChatError extends Error {
 export interface StreamChatHandlers {
   /** Un fragment de la réponse textuelle. */
   onDelta: (text: string) => void;
+  /** Les passages récupérés pour cette réponse, envoyés avant le premier delta. */
+  onSources: (sources: Source[]) => void;
   /** Le serveur va exécuter un outil. */
   onToolCall: (name: string, input: unknown) => void;
   /** L'outil a répondu, avec ou sans succès. */
@@ -63,6 +65,9 @@ export async function streamChat(
         switch (event.event) {
           case "delta":
             handlers.onDelta(parseJson<{ text: string }>(event.data).text);
+            break;
+          case "sources":
+            handlers.onSources(parseJson<{ sources: Source[] }>(event.data).sources);
             break;
           case "tool_call": {
             const { name, input } = parseJson<{ name: string; input: unknown }>(event.data);

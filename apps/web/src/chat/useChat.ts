@@ -73,6 +73,7 @@ export function useChat(): UseChatResult {
           append("model", `${arrow} (tour ${turn})`, payload);
         },
         onDelta: (text) => setMessages((prev) => updateLastAssistant(prev, (m) => ({ ...m, content: m.content + text }))),
+        onSources: (sources) => setMessages((prev) => updateLastAssistant(prev, (m) => ({ ...m, sources }))),
         onToolCall: (name, input) =>
           setMessages((prev) =>
             updateLastAssistant(prev, (m) => ({ ...m, tools: [...(m.tools ?? []), { name, input }] })),
@@ -136,7 +137,10 @@ function parseJsonOrText(raw: string): unknown {
 }
 
 /**
- * Projette l'historique en texte seul avant l'envoi.
+ * Projette l'historique en texte seul avant l'envoi : seuls `role` et
+ * `content` partent. Les sources (comme les outils) ne sont qu'un affichage
+ * et ne repartent jamais au serveur ; les [n] restent dans le texte, mais
+ * le serveur re-récupère ses propres passages à chaque question.
  *
  * SIMPLIFICATION VOULUE : les appels d'outils et leurs résultats ne vivent que
  * le temps d'une requête, côté serveur. Au message suivant, le modèle ne voit
@@ -164,7 +168,11 @@ function markToolResult(tools: UiMessage["tools"], name: string, ok: boolean) {
   return tools.map((tool, i) => (i === index ? { ...tool, ok } : tool));
 }
 
-/** Après Stop ou erreur : une bulle sans texte ni outil n'a rien à montrer. */
+/**
+ * Après Stop ou erreur : une bulle sans texte ni outil n'a rien à montrer.
+ * Des sources seules ne comptent pas : elles ne s'affichent que si le texte
+ * les cite, donc sans texte elles restent invisibles.
+ */
 function dropEmptyTrailingAssistant(messages: UiMessage[]): UiMessage[] {
   const last = messages.at(-1);
   const isEmpty = last?.role === "assistant" && last.content === "" && !last.tools?.length;

@@ -1,6 +1,6 @@
 # Jour 2 · Cours 1 — L'ingestion d'un RAG
 
-> [Sommaire](README.md) · Précédent : [Jour 1 · Cours 2 — Le tool use](jour-1-appel-doutils.md)
+> [Sommaire](README.md) · Précédent : [Jour 1 · Cours 2 — Le tool use](jour-1-appel-doutils.md) · Suivant : [Jour 2 · Cours 2 — La réponse sourcée](jour-2-recherche-reponse.md)
 
 > **Prérequis.** Avoir suivi les deux cours du jour 1,
 > [le flux d'un message](jour-1-flux-dun-message.md) et

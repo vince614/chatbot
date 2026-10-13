@@ -14,17 +14,23 @@ Fonctionnalités en place :
 - **journal d'événements** dans l'interface : actions, requêtes HTTP,
   événements SSE, échanges avec le modèle ;
 - **ingestion RAG** : PDF → chunks → embeddings Voyage AI → Postgres +
-  pgvector, avec une commande de recherche. La recherche n'est pas encore
-  branchée sur le chat.
+  pgvector ;
+- **réponses sourcées** : à chaque message, le chat cherche les 5 passages
+  les plus proches, répond uniquement à partir d'eux (« Je ne sais pas »
+  sinon) et cite ses sources `[1]`, `[2]` ; l'interface affiche les sources
+  citées, dépliables, et les pastilles renvoient à l'extrait.
 
 ## Installation
 
-Prérequis : Node >= 20.19 (fichier `.nvmrc` fourni), et Docker pour le RAG.
+Prérequis : Node >= 20.19 (fichier `.nvmrc` fourni), et Docker pour la base
+de documents.
 
 ```bash
 npm install
 cp apps/api/.env.example apps/api/.env
-# puis renseigner LLM_API_KEY (et EMBEDDING_API_KEY pour le RAG) dans apps/api/.env
+# puis renseigner LLM_API_KEY et EMBEDDING_API_KEY dans apps/api/.env
+npm run db:up && npm run db:migrate     # base Postgres + pgvector
+npm run rag:sample-pdf && npm run ingest # un document de test, ingéré
 ```
 
 ## Lancement
@@ -48,12 +54,13 @@ Le front relaie tout appel à `/api/*` vers le backend (proxy Vite).
 
 | Événement | Données |
 | --- | --- |
+| `sources` | `{ sources: [{ index, fileName, pageStart, pageEnd, score, excerpt }] }` : les passages retrouvés, avant le premier `delta` ; `index` est le numéro cité `[n]` |
 | `delta` | `{ text }` : un fragment de la réponse |
 | `tool_call` | `{ name, input }` : le modèle demande un outil |
 | `tool_result` | `{ name, ok }` : l'outil a été exécuté |
 | `debug` | seulement si `debug: true` : à chaque tour, la requête envoyée au modèle (prompt système, historique, outils) puis sa réponse |
 | `done` | fin normale |
-| `error` | `{ message }` : erreur, ou plafond de 5 tours d'outils atteint |
+| `error` | `{ message }` : erreur, recherche documentaire indisponible, ou plafond de 5 tours d'outils atteint |
 
 ```bash
 curl -N -X POST http://localhost:3000/api/chat \
@@ -61,10 +68,11 @@ curl -N -X POST http://localhost:3000/api/chat \
   -d '{"messages":[{"role":"user","content":"Combien font 1234 * 5678 ?"}]}'
 ```
 
-## RAG : ingestion et recherche
+## RAG : ingestion, recherche et réponse
 
 Le code vit dans `apps/api/src/rag/`. L'ingestion est un ensemble de scripts,
-séparé du serveur.
+séparé du serveur ; la recherche (`retrieve`) et le prompt (`buildRagPrompt`)
+sont utilisés à la fois par les scripts et par `POST /api/chat`.
 
 ```bash
 npm run db:up                             # Postgres 17 + pgvector (docker compose, port 5433)
@@ -74,6 +82,8 @@ npm run rag:preview -- mon.pdf [--short]  # affiche les chunks d'un PDF, sans ri
 npm run rag:embed-check                   # vérifie la configuration Voyage sur 3 phrases
 npm run ingest                            # ingère data/pdfs/ (idempotent, par sha256)
 npm run search -- "ma question" [--sql] [--explain]   # 5 chunks les plus proches
+npm run ask -- "ma question" [--k 5]      # prompt RAG assemblé, réponse, sources citées
+npm run rag:sample-pdf                    # génère data/pdfs/reglement-interieur.pdf (document de test fictif)
 ```
 
 Le pipeline : extraction page par page (pdf.js), nettoyage (en-têtes et pieds
@@ -88,7 +98,9 @@ volume), ou `docker compose down -v` pour tout effacer.
 
 Elles vivent uniquement dans `apps/api/.env` (ignoré par git). Chaque
 programme refuse de démarrer si une variable dont il a besoin manque : le
-serveur n'exige que les variables `LLM_*`, les scripts RAG que les leurs.
+serveur les exige toutes, les scripts RAG seulement les leurs (`db:migrate`
+fonctionne sans clé). Une base arrêtée n'empêche pas le serveur de démarrer :
+le chat renvoie alors une erreur « recherche indisponible ».
 
 | Variable | Rôle | Exemple |
 | --- | --- | --- |
@@ -114,16 +126,17 @@ ne sont pas comparables.
 ```
 apps/api/src/
 ├─ server.ts, config.ts     démarrage Fastify, configuration
-├─ routes/chat.ts           POST /api/chat : boucle modèle ↔ outils, flux SSE
+├─ routes/chat.ts           POST /api/chat : recherche, sources, boucle modèle ↔ outils, flux SSE
 ├─ llm/                     LlmClient + fabrique ; seul anthropic.ts importe le SDK
 ├─ tools/                   registre d'outils (validation Zod, délai, erreurs → résultat)
-├─ prompts/                 prompt système
 └─ rag/
+   ├─ retrieve.ts           createRetriever → retrieve(question, { k })
+   ├─ prompt.ts             prompt système RAG, buildRagPrompt, extractCitations (purs)
    ├─ pdf/, text/           extraction, nettoyage, découpage (fonctions pures)
    ├─ embeddings/           EmbeddingClient + fabrique ; seul voyage.ts connaît l'API Voyage
    ├─ db/                   migrations, requêtes SQL
-   └─ scripts/              migrate, preview, embed-check, ingest, search
-apps/web/src/chat/          UI du chat, hook useChat, parseur SSE, journal d'événements
+   └─ scripts/              migrate, preview, embed-check, ingest, search, ask, sample-pdf
+apps/web/src/chat/          UI du chat, hook useChat, parseur SSE, citations et sources, journal d'événements
 ```
 
 Une règle commune : le reste du code ne dépend d'aucun fournisseur. On
@@ -141,3 +154,4 @@ appuyées sur le code, questions et corrigé.
 | `docs/cours/jour-1-flux-dun-message.md` | Jour 1 · Le voyage d'un message : React → Fastify → LLM, streaming SSE |
 | `docs/cours/jour-1-appel-doutils.md` | Jour 1 · Le tool use : format neutre, boucle, registre d'outils |
 | `docs/cours/jour-2-ingestion.md` | Jour 2 · L'ingestion d'un RAG : pgvector, découpage, embeddings, recherche |
+| `docs/cours/jour-2-recherche-reponse.md` | Jour 2 · La réponse sourcée : `retrieve`, prompt RAG, `/chat`, citations dans l'interface |
