@@ -22,7 +22,8 @@
     "rag:sample-pdf": "npm run rag:sample-pdf -w apps/api",
     "ask": "npm run ask -w apps/api --",
     "eval:run": "npm run eval:run -w apps/api --",
-    "eval:score": "npm run eval:score -w apps/api --"
+    "eval:score": "npm run eval:score -w apps/api --",
+    "eval:compare": "npm run eval:compare -w apps/api --"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

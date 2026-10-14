@@ -94,7 +94,11 @@ export interface SearchResult {
   pageStart: number;
   pageEnd: number;
   content: string;
-  /** Similarité cosinus : 1 = même direction, 0 = sans rapport. */
+  /**
+   * Dépend de la recherche : similarité cosinus en vectoriel (1 = même
+   * direction, 0 = sans rapport), ts_rank en plein texte (sans borne fixe,
+   * comparable seulement entre résultats d'une même question).
+   */
   score: number;
 }
 
@@ -119,21 +123,64 @@ ORDER BY c.embedding <=> $1::vector
 LIMIT $2`;
 
 export async function searchChunks(pool: pg.Pool, queryVector: number[], limit: number): Promise<SearchResult[]> {
-  const { rows } = await pool.query<{
-    file_name: string;
-    chunk_index: number;
-    page_start: number;
-    page_end: number;
-    content: string;
-    score: number;
-  }>(SEARCH_SQL, [toSqlVector(queryVector), limit]);
+  const { rows } = await pool.query<SearchRow>(SEARCH_SQL, [toSqlVector(queryVector), limit]);
+  return rows.map(toSearchResult);
+}
 
-  return rows.map((row) => ({
+/**
+ * Les `limit` chunks les mieux classés par la recherche plein texte.
+ *
+ * 1. to_tsvector('french', $1) normalise la question comme les chunks l'ont
+ *    été (mots vides retirés, mots réduits à leur racine).
+ * 2. Ses lexèmes sont reliés par « | » (OU). plainto_tsquery les relierait par
+ *    « & » (ET) : une question en langage naturel, avec ses mots en trop,
+ *    n'aurait presque jamais de chunk contenant tous ses mots.
+ *    quote_literal protège les lexèmes qui contiennent un point (next.js) ;
+ *    le cast ::tsquery ne re-racinise pas des mots déjà racinisés.
+ * 3. @@ garde les chunks qui contiennent au moins un lexème (index GIN),
+ *    ts_rank les classe : plus il y a d'occurrences des termes, plus le score
+ *    est haut. Une question faite uniquement de mots vides donne une requête
+ *    NULL, donc aucun résultat.
+ */
+export const LEXICAL_SEARCH_SQL = `
+WITH q AS (
+  SELECT array_to_string(array_agg(quote_literal(lexeme)), ' | ')::tsquery AS query
+  FROM unnest(to_tsvector('french', $1))
+)
+SELECT d.file_name,
+       c.chunk_index,
+       c.page_start,
+       c.page_end,
+       c.content,
+       ts_rank(c.content_tsv, q.query) AS score
+FROM chunks c
+JOIN documents d ON d.id = c.document_id
+CROSS JOIN q
+WHERE c.content_tsv @@ q.query
+ORDER BY score DESC, c.id
+LIMIT $2`;
+
+export async function searchLexical(pool: pg.Pool, question: string, limit: number): Promise<SearchResult[]> {
+  const { rows } = await pool.query<SearchRow>(LEXICAL_SEARCH_SQL, [question, limit]);
+  return rows.map(toSearchResult);
+}
+
+interface SearchRow {
+  file_name: string;
+  chunk_index: number;
+  page_start: number;
+  page_end: number;
+  content: string;
+  score: number;
+}
+
+function toSearchResult(row: SearchRow): SearchResult {
+  return {
     fileName: row.file_name,
     chunkIndex: row.chunk_index,
     pageStart: row.page_start,
     pageEnd: row.page_end,
     content: row.content,
     score: Number(row.score),
-  }));
+  };
 }

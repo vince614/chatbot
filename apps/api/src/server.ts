@@ -2,7 +2,7 @@ import Fastify from "fastify";
 
 import { ConfigError, loadConfig } from "./config.js";
 import { createLlmClient } from "./llm/index.js";
-import { loadDatabaseConfig, loadEmbeddingConfig } from "./rag/config.js";
+import { loadDatabaseConfig, loadEmbeddingConfig, loadSearchMode } from "./rag/config.js";
 import { createPool } from "./rag/db/pool.js";
 import { createEmbeddingClient } from "./rag/embeddings/index.js";
 import { createRetriever } from "./rag/retrieve.js";
@@ -18,7 +18,11 @@ const tools = createToolRegistry([getCurrentDatetimeTool, calculateTool]);
 // connexion tant qu'on ne s'en sert pas : une base arrêtée n'empêche pas le
 // serveur de démarrer, elle fera échouer la recherche avec un message clair.
 const pool = createPool(config.rag.databaseUrl);
-const retrieve = createRetriever({ pool, embedder: createEmbeddingClient(config.rag.embedding) });
+const retrieve = createRetriever({
+  pool,
+  embedder: createEmbeddingClient(config.rag.embedding),
+  defaultMode: config.rag.searchMode,
+});
 
 // Le logger par défaut trace méthode, URL et statut : jamais le corps des requêtes.
 const app = Fastify({ logger: true });
@@ -42,7 +46,11 @@ function loadConfigOrExit() {
   try {
     return {
       ...loadConfig(),
-      rag: { databaseUrl: loadDatabaseConfig().databaseUrl, embedding: loadEmbeddingConfig() },
+      rag: {
+        databaseUrl: loadDatabaseConfig().databaseUrl,
+        embedding: loadEmbeddingConfig(),
+        searchMode: loadSearchMode(),
+      },
     };
   } catch (error) {
     if (error instanceof ConfigError) {

@@ -1,6 +1,6 @@
 # Jour 2 · Cours 3 — Mesurer la qualité avec un jeu de test
 
-> [Sommaire](README.md) · Précédent : [Jour 2 · Cours 2 — La réponse sourcée](jour-2-recherche-reponse.md) · [Approfondissement : le code](approfondissement/jour-2-jeu-de-test.md)
+> [Sommaire](README.md) · Précédent : [Jour 2 · Cours 2 — La réponse sourcée](jour-2-recherche-reponse.md) · Suivant : [Jour 3 · Cours 1 — La recherche hybride](jour-3-hybride.md) · [Approfondissement : le code](approfondissement/jour-2-jeu-de-test.md)
 
 > **Prérequis.** [La réponse sourcée](jour-2-recherche-reponse.md) : le chat
 > cherche, répond à partir des documents et cite ses sources.

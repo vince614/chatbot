@@ -32,7 +32,7 @@ async function main(): Promise<void> {
   const sum = (key: "recherche" | "reponse", subset = rows) => subset.filter((r) => r.note?.[key] === 1).length;
   const unrated = rows.filter((r) => r.note?.recherche == null || r.note?.reponse == null);
 
-  console.log(`Run ${runId} · ${run.config.llm.modele} · k=${run.config.k} · commit ${run.config.commit}\n`);
+  console.log(`Run ${runId} · ${run.config.llm.modele} · recherche ${run.config.recherche?.mode ?? "vector"} · k=${run.config.k} · commit ${run.config.commit}\n`);
   console.log(`Recherche : ${sum("recherche")}/${total}`);
   console.log(`Réponse   : ${sum("reponse")}/${total}`);
   if (unrated.length > 0) {

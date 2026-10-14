@@ -45,7 +45,7 @@ export function renderReport(runId: string, run: RunFile, questions: EvalQuestio
     "",
     `Modèle ${config.llm.modele} (effort ${config.llm.effort}) · embeddings ${config.embeddings.modele} ·`,
     `chunks de ${config.decoupage.tokens_par_chunk} tokens (recouvrement ${config.decoupage.recouvrement * 100} %) ·`,
-    `k = ${config.k} · commit ${config.commit}`,
+    `recherche ${config.recherche?.mode ?? "vector"} · k = ${config.k} · commit ${config.commit}`,
     "",
     "## Comment noter",
     "",

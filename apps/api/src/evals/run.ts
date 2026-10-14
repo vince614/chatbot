@@ -1,4 +1,4 @@
-// npm run eval:run [-- --only q01,q19]
+// npm run eval:run [-- --mode vector|lexical|hybrid] [--only q01,q19]
 // Rejoue les questions de evals/questions.json dans la même chaîne que /chat
 // (retrieve → buildRagPrompt → LlmClient), sans HTTP ni historique, une par une.
 import { execSync } from "node:child_process";
@@ -10,14 +10,22 @@ import { z } from "zod";
 
 import { ConfigError, loadConfig } from "../config.js";
 import { createLlmClient, type LlmClient, type LlmEffort } from "../llm/index.js";
-import { loadDatabaseConfig, loadEmbeddingConfig } from "../rag/config.js";
+import { loadDatabaseConfig, loadEmbeddingConfig, loadSearchMode } from "../rag/config.js";
 import { listDocuments } from "../rag/db/repository.js";
 import { createPool } from "../rag/db/pool.js";
 import { assertEmbeddingDimension } from "../rag/db/schema.js";
 import { CHUNK_OVERLAP_RATIO, CHUNK_TARGET_TOKENS } from "../rag/document.js";
 import { createEmbeddingClient } from "../rag/embeddings/index.js";
 import { buildRagPrompt, extractCitations, RAG_SYSTEM_PROMPT } from "../rag/prompt.js";
-import { createRetriever, DEFAULT_K, type Retrieve } from "../rag/retrieve.js";
+import {
+  createRetriever,
+  DEFAULT_K,
+  HYBRID_CANDIDATES,
+  type Retrieve,
+  RRF_K,
+  SEARCH_MODES,
+  type SearchMode,
+} from "../rag/retrieve.js";
 import { writeReport } from "./report.js";
 import {
   type EvalQuestion,
@@ -39,7 +47,14 @@ import {
 const EFFORT: LlmEffort = "medium";
 
 async function main(): Promise<void> {
-  const { values } = parseArgs({ options: { only: { type: "string" } } });
+  const { values } = parseArgs({ options: { only: { type: "string" }, mode: { type: "string" } } });
+  // Sans --mode : celui de RAG_SEARCH_MODE, comme /chat.
+  const mode = (values.mode ?? loadSearchMode()) as SearchMode;
+  if (!SEARCH_MODES.includes(mode)) {
+    console.error(`--mode doit valoir ${SEARCH_MODES.join(", ")} (reçu : "${mode}").`);
+    process.exitCode = 1;
+    return;
+  }
   const appConfig = loadConfig();
   const dbConfig = loadDatabaseConfig();
   const embeddingConfig = loadEmbeddingConfig();
@@ -52,7 +67,7 @@ async function main(): Promise<void> {
   const pool = createPool(dbConfig.databaseUrl);
   try {
     await assertEmbeddingDimension(pool, dbConfig.embeddingDimension);
-    const retrieve = createRetriever({ pool, embedder: createEmbeddingClient(embeddingConfig) });
+    const retrieve = createRetriever({ pool, embedder: createEmbeddingClient(embeddingConfig), defaultMode: mode });
     const llm = createLlmClient(appConfig.llm);
 
     const startedAt = new Date();
@@ -66,6 +81,8 @@ async function main(): Promise<void> {
       },
       decoupage: { tokens_par_chunk: CHUNK_TARGET_TOKENS, recouvrement: CHUNK_OVERLAP_RATIO },
       k: DEFAULT_K,
+      recherche:
+        mode === "hybrid" ? { mode, candidats_par_recherche: HYBRID_CANDIDATES, rrf_k: RRF_K } : { mode },
       commit: gitCommit(),
       sha256_prompt_systeme: sha256(RAG_SYSTEM_PROMPT),
       sha256_questions: sha256(questionsText),
@@ -75,7 +92,9 @@ async function main(): Promise<void> {
     const runFile = `${RUNS_DIR}${runIdFromDate(startedAt)}.json`;
     await mkdir(RUNS_DIR, { recursive: true });
     const run: RunFile = { config, resultats: [] };
-    console.log(`${questions.length} question(s) · ${config.llm.modele} (effort ${EFFORT}) · k=${config.k}`);
+    console.log(
+      `${questions.length} question(s) · ${config.llm.modele} (effort ${EFFORT}) · recherche ${mode} · k=${config.k}`,
+    );
 
     // Une question après l'autre : des appels parallèles se disputeraient les
     // quotas (Voyage : 3 requêtes/min sur ce compte) et rendraient les durées

@@ -5,7 +5,7 @@ import { parseArgs } from "node:util";
 
 import { ConfigError, loadConfig } from "../../config.js";
 import { createLlmClient } from "../../llm/index.js";
-import { loadDatabaseConfig, loadEmbeddingConfig } from "../config.js";
+import { loadDatabaseConfig, loadEmbeddingConfig, loadSearchMode } from "../config.js";
 import { createPool } from "../db/pool.js";
 import { assertEmbeddingDimension } from "../db/schema.js";
 import { createEmbeddingClient } from "../embeddings/index.js";
@@ -33,7 +33,11 @@ async function main(): Promise<void> {
 
   try {
     await assertEmbeddingDimension(pool, dbConfig.embeddingDimension);
-    const retrieve = createRetriever({ pool, embedder: createEmbeddingClient(loadEmbeddingConfig()) });
+    const retrieve = createRetriever({
+      pool,
+      embedder: createEmbeddingClient(loadEmbeddingConfig()),
+      defaultMode: loadSearchMode(),
+    });
 
     // 1. Recherche, 2. prompt.
     const chunks = await retrieve(question, { k: Number(values.k) });

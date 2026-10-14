@@ -16,7 +16,8 @@
     "rag:sample-pdf": "tsx src/rag/scripts/make-sample-pdf.ts",
     "ask": "tsx src/rag/scripts/ask.ts",
     "eval:run": "tsx src/evals/run.ts",
-    "eval:score": "tsx src/evals/score.ts"
+    "eval:score": "tsx src/evals/score.ts",
+    "eval:compare": "tsx src/evals/compare.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",

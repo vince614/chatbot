@@ -12,6 +12,7 @@ dans l'ordre : chacun part de l'état du code laissé par le précédent.
 | 2 | 1 | [L'ingestion d'un RAG](jour-2-ingestion.md) | Postgres + pgvector, extraction et découpage de PDF, embeddings Voyage, ingestion idempotente, recherche | [approfondissement](approfondissement/jour-2-ingestion.md) |
 | 2 | 2 | [La réponse sourcée](jour-2-recherche-reponse.md) | `retrieve`, prompt RAG et injection, branchement sur `/chat`, événement `sources`, citations cliquables | [approfondissement](approfondissement/jour-2-recherche-reponse.md) |
 | 2 | 3 | [Le jeu de test](jour-2-jeu-de-test.md) | 20 questions typées, runs comparables, notation manuelle, erreur de recherche ou de génération | [approfondissement](approfondissement/jour-2-jeu-de-test.md) |
+| 3 | 1 | [La recherche hybride](jour-3-hybride.md) | Plein texte Postgres (`tsvector`, GIN), identifiants exacts, fusion RRF, `eval:compare` | [approfondissement](approfondissement/jour-3-hybride.md) |
 
 ## La trame commune
 

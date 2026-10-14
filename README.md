@@ -76,12 +76,12 @@ sont utilisés à la fois par les scripts et par `POST /api/chat`.
 
 ```bash
 npm run db:up                             # Postgres 17 + pgvector (docker compose, port 5433)
-npm run db:migrate                        # crée les tables documents et chunks
+npm run db:migrate                        # crée les tables documents et chunks, puis l'index plein texte
 # déposer des PDF dans apps/api/data/pdfs/ (ignoré par git)
 npm run rag:preview -- mon.pdf [--short]  # affiche les chunks d'un PDF, sans rien écrire
 npm run rag:embed-check                   # vérifie la configuration Voyage sur 3 phrases
 npm run ingest                            # ingère data/pdfs/ (idempotent, par sha256)
-npm run search -- "ma question" [--sql] [--explain]   # 5 chunks les plus proches
+npm run search -- "ma question" [--mode vector|lexical|hybrid] [--sql] [--explain]   # 5 chunks les mieux classés
 npm run ask -- "ma question" [--k 5]      # prompt RAG assemblé, réponse, sources citées
 npm run rag:sample-pdf                    # génère data/pdfs/reglement-interieur.pdf (document de test fictif)
 ```
@@ -93,14 +93,20 @@ vont dans `apps/api/evals/runs/` (ignoré par git : ils contiennent des
 extraits des documents).
 
 ```bash
-npm run eval:run [-- --only q01,q13]      # rejoue les questions → <date>.json, <date>.md, <date>.notes.json
+npm run eval:run [-- --mode hybrid] [--only q01,q13]   # rejoue les questions → <date>.json, <date>.md, <date>.notes.json
 npm run eval:score -- <date>              # additionne les notes saisies à la main, détail par type, échecs
+npm run eval:compare -- <A> <B> [<C>]     # rang du bon passage dans chaque run, calculé depuis les pages attendues
 ```
 
 Le pipeline : extraction page par page (pdf.js), nettoyage (en-têtes et pieds
 répétés, césures, ligatures), découpage en chunks d'environ 500 tokens avec
 15 % de recouvrement et les numéros de page, embeddings par lots avec
 nouvelles tentatives sur 429/5xx, puis écriture dans une transaction.
+
+La recherche a trois modes (`RAG_SEARCH_MODE`, ou `--mode` dans les
+scripts) : `vector` (pgvector, distance cosinus), `lexical` (plein texte
+Postgres, configuration `french`, index GIN) et `hybrid` (les deux en
+parallèle, fusionnées par Reciprocal Rank Fusion).
 
 Pour arrêter la base : `docker compose down` (les données restent dans le
 volume), ou `docker compose down -v` pour tout effacer.
@@ -124,6 +130,7 @@ le chat renvoie alors une erreur « recherche indisponible ».
 | `EMBEDDING_API_KEY` | Clé API Voyage AI | `pa-...` |
 | `EMBEDDING_MODEL` | Modèle d'embeddings | `voyage-3.5` |
 | `EMBEDDING_DIMENSION` | Dimension des vecteurs (256, 512, 1024 ou 2048). Figée dans la colonne SQL à la migration. | `1024` |
+| `RAG_SEARCH_MODE` | Recherche par défaut : `vector`, `lexical` ou `hybrid`. Optionnelle (`vector` si absente). | `vector` |
 
 Les clés ne sont jamais exposées au front : Vite ne publie que les variables
 préfixées `VITE_`, et `apps/web` n'a pas de fichier `.env`.
@@ -168,3 +175,4 @@ appuyées sur le code, questions et corrigé.
 | `docs/cours/jour-2-ingestion.md` | Jour 2 · L'ingestion d'un RAG : pgvector, découpage, embeddings, recherche |
 | `docs/cours/jour-2-recherche-reponse.md` | Jour 2 · La réponse sourcée : `retrieve`, prompt RAG, `/chat`, citations dans l'interface |
 | `docs/cours/jour-2-jeu-de-test.md` | Jour 2 · Le jeu de test : questions, runs, notation, lecture des échecs |
+| `docs/cours/jour-3-hybride.md` | Jour 3 · La recherche hybride : plein texte Postgres, identifiants, fusion RRF, comparaison des modes |

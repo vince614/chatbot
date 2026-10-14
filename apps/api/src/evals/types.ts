@@ -37,6 +37,11 @@ export interface RunConfig {
   embeddings: { fournisseur: string; modele: string; dimension: number };
   decoupage: { tokens_par_chunk: number; recouvrement: number };
   k: number;
+  /**
+   * Recherche utilisée. Absente dans les runs antérieurs à la recherche
+   * hybride : ils ont tous été faits en vectoriel.
+   */
+  recherche?: { mode: string; candidats_par_recherche?: number; rrf_k?: number };
   /** Commit Git du code, avec « -modifie » si des fichiers n'étaient pas commités. */
   commit: string;
   /** Empreintes : un prompt ou des questions modifiés rendent deux runs incomparables. */

@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import { ConfigError, loadDotEnv, requireEnv } from "../config.js";
 import type { EmbeddingClientOptions } from "./embeddings/index.js";
+import { SEARCH_MODES, type SearchMode } from "./retrieve.js";
 
 /**
  * Configuration du RAG, séparée de celle du serveur : le serveur de chat n'a
@@ -40,6 +41,19 @@ export function loadEmbeddingConfig(): EmbeddingClientOptions {
     model: process.env["EMBEDDING_MODEL"]!.trim(),
     dimension: parseDimension(process.env["EMBEDDING_DIMENSION"]!),
   };
+}
+
+/**
+ * Recherche utilisée par défaut (RAG_SEARCH_MODE). Variable optionnelle :
+ * absente, c'est "vector", le comportement d'avant la recherche hybride.
+ */
+export function loadSearchMode(): SearchMode {
+  loadDotEnv();
+  const raw = process.env["RAG_SEARCH_MODE"]?.trim() || "vector";
+  if (!(SEARCH_MODES as readonly string[]).includes(raw)) {
+    throw new ConfigError(`RAG_SEARCH_MODE doit valoir ${SEARCH_MODES.join(", ")} (reçu : "${raw}").`);
+  }
+  return raw as SearchMode;
 }
 
 function parseDimension(raw: string): number {
