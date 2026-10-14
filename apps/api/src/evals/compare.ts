@@ -32,7 +32,7 @@ async function main(): Promise<void> {
 
   // Seules les questions qui ont une réponse ont un « bon passage » à trouver.
   const answerable = questions.filter((q) => q.avec_reponse);
-  const COL = 10;
+  const COL = 12;
 
   console.log(`\nRang du bon passage (« absent » : hors des ${TOP} chunks récupérés)\n`);
   console.log(`${"".padEnd(4)} ${"type".padEnd(12)} ${"pages attendues".padEnd(46)} ${labels.map((l) => l.padStart(COL)).join("")}`);

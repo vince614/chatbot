@@ -211,7 +211,36 @@ const match = chunks
 - Deux indicateurs : **dans les 5 premiers** (ce que reçoit le modèle) et
   **au 1er rang** (plus fin : le top 5 sature vite sur 13 chunks).
 
-RESULTATS_A_COMPLETER
+**Résultats** (3 runs consécutifs, même commit, mêmes documents) :
+
+| Type | Vectoriel top 5 | 1er rang | Plein texte top 5 | 1er rang | Hybride top 5 | 1er rang |
+| --- | --- | --- | --- | --- | --- | --- |
+| factuelle (5) | 5 | 5 | 5 | 4 | 5 | 5 |
+| reformulée (4) | 4 | 3 | 4 | 2 | 4 | 3 |
+| identifiant (3) | 3 | 3 | 3 | 2 | 3 | 3 |
+| tableau (2) | 2 | 2 | 2 | 2 | 2 | 2 |
+| combinaison (2) | 2 | 1 | 1 | 0 | 2 | 1 |
+| **total (16)** | **16** | **14** | **15** | **10** | **16** | **14** |
+
+- **Vectoriel et hybride font jeu égal.** Seule q16 diffère : les rangs
+  passent de 1 + 3 à 3 + 2, et les deux pages restent dans le top 5.
+- **Le plein texte seul est le plus faible**, surtout sur les reformulations
+  (q06 : 3e) et sur q16 : sans IDF, les mots courants de la question
+  (« documents », « mentionnée ») ont classé d'autres chunks devant celui
+  qui contient « CNIL ».
+- **Les questions « identifiant » ne montrent aucun gain** : elles ne
+  contiennent pas l'identifiant (« C'est quoi le hostname… ? »). L'hybride
+  aide quand on **tape** `ns338233`, et ce cas n'est pas dans le jeu de test.
+- Une question = 6 points sur 16 : avec 13 chunks, ces écarts restent
+  fragiles.
+
+> **À retenir**
+> Une mesure ne montre que ce que le jeu de test contient : ici, rien sur les
+> identifiants tapés tels quels.
+
+**Question**
+1. Quelle question ajouterais-tu au jeu de test pour départager vectoriel et
+   hybride ?
 
 ---
 
@@ -271,6 +300,10 @@ chacun pèse autant que le mot rare et discriminant, qui se noie.
 **L4.1** Toute la base : chaque chunk trouvé par le plein texte cumule donc
 deux contributions et passe devant les autres. Sur une grande base, l'effet
 serait bien plus faible.
+
+**L6.1** Une question qui contient l'identifiant tel quel. Avec la requête
+« ns338233 », on a observé que le bon chunk sort du top 5 en vectoriel et
+arrive 1er en hybride : une telle question les départagerait.
 
 ---
 
