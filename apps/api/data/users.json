@@ -1,0 +1,5 @@
+[
+  { "id": "alice", "nom": "Alice (RH)", "groupes": ["rh"] },
+  { "id": "bruno", "nom": "Bruno (Tech)", "groupes": ["tech"] },
+  { "id": "chloe", "nom": "Chloé (RH + Tech)", "groupes": ["rh", "tech"] }
+]

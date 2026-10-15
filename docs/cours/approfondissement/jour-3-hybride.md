@@ -5,6 +5,10 @@
 > Ce document suit le code **tel qu'il est aujourd'hui dans le dépôt**. Lis
 > d'abord le cours ; viens ici quand tu veux savoir *comment* c'est écrit.
 > Chaque extrait indique son fichier : ouvre-le à côté.
+>
+> **Note.** Le cours suivant (droits d'accès) a ajouté `userGroups` et
+> `--user` à plusieurs fonctions citées ici : les extraits les montrent, et
+> [l'approfondissement des droits](jour-3-droits.md) les explique.
 
 ## Carte des fichiers
 
@@ -197,8 +201,13 @@ observé dans `psql` :
 ### `searchLexical()`, `SearchRow` et `toSearchResult()`
 
 ```ts
-export async function searchLexical(pool: pg.Pool, question: string, limit: number): Promise<SearchResult[]> {
-  const { rows } = await pool.query<SearchRow>(LEXICAL_SEARCH_SQL, [question, limit]);
+export async function searchLexical(
+  pool: pg.Pool,
+  question: string,
+  limit: number,
+  userGroups: readonly string[],
+): Promise<SearchResult[]> {
+  const { rows } = await pool.query<SearchRow>(LEXICAL_SEARCH_SQL, [question, limit, userGroups]);
   return rows.map(toSearchResult);
 }
 
@@ -284,31 +293,44 @@ avant la fusion) et `RRF_K = 60` (la valeur du papier d'origine, Cormack et al.,
 export function createRetriever({ pool, embedder, defaultMode = "vector" }: RetrieverDeps): Retrieve {
   // La question devient un vecteur (input_type: "query"), puis les chunks
   // les plus proches, triés par distance cosinus croissante.
-  async function searchVector(text: string, limit: number, signal?: AbortSignal): Promise<SearchResult[]> {
+  async function searchVector(
+    text: string,
+    limit: number,
+    userGroups: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<SearchResult[]> {
     const queryVector = await embedder.embedQuery(text, { signal });
-    return searchChunks(pool, queryVector, limit);
+    return searchChunks(pool, queryVector, limit, userGroups);
   }
 
-  return async (question, { k = DEFAULT_K, mode = defaultMode, signal } = {}) => {
+  return async (question, { userGroups, k = DEFAULT_K, mode = defaultMode, signal }) => {
     const text = question.trim();
     if (text === "") throw new Error("La question est vide.");
     if (!Number.isInteger(k) || k < 1 || k > MAX_K) {
       throw new Error(`k doit être un entier entre 1 et ${MAX_K} (reçu : ${k}).`);
     }
+    // Le typage protège le code TypeScript ; ceci protège un appel venu
+    // d'ailleurs (JSON, JavaScript) qui passerait autre chose qu'un tableau.
+    if (!Array.isArray(userGroups)) throw new Error("userGroups doit être un tableau de groupes.");
+    // Aucun groupe : aucun document visible. Inutile d'appeler Voyage.
+    if (userGroups.length === 0) return [];
 
     switch (mode) {
       case "vector":
-        return searchVector(text, k, signal);
+        return searchVector(text, k, userGroups, signal);
       case "lexical":
         // Aucun appel au fournisseur d'embeddings : tout se passe dans Postgres.
-        return searchLexical(pool, text, k);
+        return searchLexical(pool, text, k, userGroups);
       case "hybrid": {
         // Les deux recherches sont indépendantes : on les lance en même temps,
         // la durée totale est celle de la plus lente (l'appel Voyage).
+        // Toutes deux filtrent sur userGroups : la fusion ne reçoit que des
+        // chunks autorisés. Une seule branche filtrée suffirait à faire fuiter
+        // les chunks interdits trouvés par l'autre.
         const candidates = Math.max(HYBRID_CANDIDATES, k);
         const [vector, lexical] = await Promise.all([
-          searchVector(text, candidates, signal),
-          searchLexical(pool, text, candidates),
+          searchVector(text, candidates, userGroups, signal),
+          searchLexical(pool, text, candidates, userGroups),
         ]);
         return fuseByRrf({ vector, lexical }).slice(0, k);
       }
@@ -507,6 +529,7 @@ pas d'option `--mode` ; pour comparer les modes sur une question, c'est `npm run
     allowPositionals: true,
     options: {
       // Sans --mode : celui de RAG_SEARCH_MODE, comme /chat.
+      user: { type: "string" },
       mode: { type: "string" },
       sql: { type: "boolean", default: false },
       explain: { type: "boolean", default: false },
@@ -516,7 +539,9 @@ pas d'option `--mode` ; pour comparer les modes sur une question, c'est `npm run
   const question = positionals.join(" ").trim();
   const mode = (values.mode ?? loadSearchMode()) as SearchMode;
   if (question === "" || !SEARCH_MODES.includes(mode)) {
-    console.error(`Usage : npm run search -- "ma question" [--mode ${SEARCH_MODES.join("|")}] [--sql] [--explain]`);
+    console.error(
+      `Usage : npm run search -- --user <id> "ma question" [--mode ${SEARCH_MODES.join("|")}] [--sql] [--explain]`,
+    );
     process.exitCode = 1;
     return;
   }
@@ -537,8 +562,8 @@ pas d'option `--mode` ; pour comparer les modes sur une question, c'est `npm run
     if (values.sql) {
       // En hybride, chaque requête demande HYBRID_CANDIDATES chunks, puis la fusion se fait en TypeScript.
       const limit = mode === "hybrid" ? HYBRID_CANDIDATES : DEFAULT_K;
-      if (mode !== "lexical") console.log(`Requête vectorielle ($1 = vecteur de la question, $2 = ${limit}) :${SEARCH_SQL}\n`);
-      if (mode !== "vector") console.log(`Requête plein texte ($1 = texte de la question, $2 = ${limit}) :${LEXICAL_SEARCH_SQL}\n`);
+      if (mode !== "lexical") console.log(`Requête vectorielle ($1 = vecteur de la question, $2 = ${limit}, $3 = groupes de ${user.id}) :${SEARCH_SQL}\n`);
+      if (mode !== "vector") console.log(`Requête plein texte ($1 = texte de la question, $2 = ${limit}, $3 = groupes de ${user.id}) :${LEXICAL_SEARCH_SQL}\n`);
     }
 ```
 
@@ -616,7 +641,11 @@ le disque, pas une valeur validée. Les deux réglages de la fusion ne sont pré
 ### `--mode` (`apps/api/src/evals/run.ts`)
 
 ```ts
-  const { values } = parseArgs({ options: { only: { type: "string" }, mode: { type: "string" } } });
+  const { values } = parseArgs({
+    options: { user: { type: "string" }, only: { type: "string" }, mode: { type: "string" } },
+  });
+  // Obligatoire, sans défaut : un run mesure ce que voit un utilisateur donné.
+  const user = await requireUser(values.user);
   // Sans --mode : celui de RAG_SEARCH_MODE, comme /chat.
   const mode = (values.mode ?? loadSearchMode()) as SearchMode;
   if (!SEARCH_MODES.includes(mode)) {
@@ -650,7 +679,8 @@ run hybride est un score RRF (2/61 ≈ 0.033 au plus), celui d'un run lexical un
 Dans `renderReport` (`apps/api/src/evals/report.ts`) :
 
 ```ts
-    `recherche ${config.recherche?.mode ?? "vector"} · k = ${config.k} · commit ${config.commit}`,
+    `recherche ${config.recherche?.mode ?? "vector"} · utilisateur ${config.utilisateur?.id ?? "(avant les droits)"} · ` +
+      `k = ${config.k} · commit ${config.commit}`,
 ```
 
 Dans `main` (`apps/api/src/evals/score.ts`) :
@@ -677,7 +707,10 @@ manuelle n'est nécessaire.
 
   console.log("Runs");
   runs.forEach(({ id, run }, i) => {
-    console.log(`  ${labels[i]}  ${id}  recherche ${modeOf(run).padEnd(7)}  commit ${run.config.commit}`);
+    console.log(
+      `  ${labels[i]}  ${id}  recherche ${modeOf(run).padEnd(7)}  ` +
+        `utilisateur ${(run.config.utilisateur?.id ?? "—").padEnd(6)}  commit ${run.config.commit}`,
+    );
   });
   warnIfNotComparable(runs.map((r) => r.run));
 ```

@@ -12,9 +12,10 @@ dist/
 .idea/
 .vscode/
 
-# PDF du RAG : déposés à la main, jamais versionnés
+# PDF du RAG et leurs droits (acl.json) : déposés à la main, jamais versionnés
 apps/api/data/pdfs/*
 !apps/api/data/pdfs/.gitkeep
+!apps/api/data/pdfs/acl.example.json
 
 # Runs d'évaluation : réponses du modèle, donc extraits des documents
 apps/api/evals/runs/

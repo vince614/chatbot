@@ -23,6 +23,19 @@ export interface StreamChatHandlers {
   onDebug?: (kind: "model_request" | "model_response", turn: number, payload: unknown) => void;
 }
 
+/** Un utilisateur proposé par le sélecteur ; le serveur n'expose jamais ses groupes. */
+export type ChatUser = { id: string; nom: string };
+
+/** Liste des utilisateurs de démonstration (GET /api/users). */
+export async function fetchUsers(signal: AbortSignal): Promise<ChatUser[]> {
+  const response = await fetch("/api/users", { signal });
+  if (!response.ok) {
+    throw new ChatError(`Liste des utilisateurs indisponible (HTTP ${response.status}).`);
+  }
+  const body = (await response.json()) as { users?: ChatUser[] };
+  return body.users ?? [];
+}
+
 /**
  * Envoie l'historique complet à POST /api/chat et appelle les handlers pour
  * chaque événement reçu. Se résout quand le serveur émet "done".
@@ -31,12 +44,20 @@ export interface StreamChatHandlers {
  */
 export async function streamChat(
   messages: ChatMessage[],
+  userId: string,
   signal: AbortSignal,
   handlers: StreamChatHandlers,
 ): Promise<void> {
   const response = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      // REMPLAÇANT D'AUTHENTIFICATION, pour l'exercice : le client déclare lui-même qui il est.
+      // En production, l'identité viendrait d'un cookie de session ou d'un jeton vérifié par le
+      // serveur, jamais d'un en-tête choisi par le client (n'importe qui pourrait se faire passer
+      // pour un autre).
+      "X-User-Id": userId,
+    },
     // debug: true demande au serveur d'inclure les échanges avec le modèle dans le flux.
     body: JSON.stringify({ messages, debug: handlers.onDebug !== undefined }),
     signal,
@@ -117,6 +138,11 @@ async function describeHttpError(response: Response): Promise<string> {
     } | null;
     const detail = body?.issues?.[0]?.message;
     return detail ? `Requête refusée : ${detail}` : "Requête refusée par le serveur.";
+  }
+  if (response.status === 401) {
+    // Refusé avant tout flux SSE : { "error": "Utilisateur non identifié." }.
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    return body?.error ?? "Utilisateur non identifié.";
   }
   return `Erreur du serveur (HTTP ${response.status}).`;
 }

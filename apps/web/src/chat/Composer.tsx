@@ -5,13 +5,15 @@ interface ComposerProps {
   disabled: boolean;
   onSend: (text: string) => void;
   onStop: () => void;
+  /** Si renseigné, l'envoi est impossible et ce texte en explique la raison. */
+  lockedHint?: string;
 }
 
-export function Composer({ disabled, onSend, onStop }: ComposerProps) {
+export function Composer({ disabled, onSend, onStop, lockedHint }: ComposerProps) {
   const [draft, setDraft] = useState("");
 
   const submit = () => {
-    if (disabled || !draft.trim()) return;
+    if (disabled || lockedHint || !draft.trim()) return;
     onSend(draft);
     setDraft("");
   };
@@ -32,6 +34,11 @@ export function Composer({ disabled, onSend, onStop }: ComposerProps) {
         submit();
       }}
     >
+      {lockedHint && (
+        <p className="composer__hint" id="composer-hint">
+          {lockedHint}
+        </p>
+      )}
       <textarea
         className="composer__input"
         value={draft}
@@ -39,7 +46,8 @@ export function Composer({ disabled, onSend, onStop }: ComposerProps) {
         onKeyDown={handleKeyDown}
         placeholder={disabled ? "Génération en cours…" : "Écris un message (Maj+Entrée pour un saut de ligne)"}
         rows={2}
-        disabled={disabled}
+        disabled={disabled || Boolean(lockedHint)}
+        aria-describedby={lockedHint ? "composer-hint" : undefined}
         autoFocus
       />
       {disabled ? (
@@ -47,7 +55,7 @@ export function Composer({ disabled, onSend, onStop }: ComposerProps) {
           Stop
         </button>
       ) : (
-        <button type="submit" className="composer__button" disabled={!draft.trim()}>
+        <button type="submit" className="composer__button" disabled={!draft.trim() || Boolean(lockedHint)}>
           Envoyer
         </button>
       )}

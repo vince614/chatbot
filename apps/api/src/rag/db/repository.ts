@@ -37,6 +37,8 @@ export interface DocumentToStore {
   chunks: Chunk[];
   /** Un vecteur par chunk, dans le même ordre. */
   embeddings: number[][];
+  /** Groupes autorisés à lire le document ([] : personne). */
+  allowedGroups: string[];
 }
 
 /**
@@ -55,9 +57,11 @@ export async function replaceDocument(pool: pg.Pool, doc: DocumentToStore): Prom
     // Les anciens chunks partent avec le document (ON DELETE CASCADE).
     await client.query("DELETE FROM documents WHERE file_name = $1", [doc.fileName]);
 
+    // Les droits sont écrits dans la même transaction que les chunks : la
+    // nouvelle version n'existe jamais sans ses droits.
     const { rows } = await client.query<{ id: string }>(
-      "INSERT INTO documents (file_name, sha256) VALUES ($1, $2) RETURNING id",
-      [doc.fileName, doc.sha256],
+      "INSERT INTO documents (file_name, sha256, allowed_groups) VALUES ($1, $2, $3) RETURNING id",
+      [doc.fileName, doc.sha256, doc.allowedGroups],
     );
     const documentId = rows[0]!.id;
 
@@ -88,6 +92,35 @@ export async function replaceDocument(pool: pg.Pool, doc: DocumentToStore): Prom
   }
 }
 
+/**
+ * Applique l'ACL à TOUS les documents en base, qu'ils aient été réingérés ou
+ * non : le sha256 couvre le contenu du PDF, pas ses droits. Un document absent
+ * de l'ACL reçoit '{}' (personne).
+ *
+ * L'ACL est envoyée en un seul objet JSON ; pour chaque document,
+ * $1 -> file_name donne sa liste (NULL si absent), et ARRAY(SELECT …) en fait
+ * un text[] (vide si NULL). Seules les lignes qui changent sont réécrites, et
+ * renvoyées pour être affichées.
+ */
+export async function applyAcl(
+  pool: pg.Pool,
+  acl: Map<string, string[]>,
+): Promise<{ fileName: string; allowedGroups: string[] }[]> {
+  const { rows } = await pool.query<{ file_name: string; allowed_groups: string[] }>(
+    `WITH target AS (
+       SELECT id, ARRAY(SELECT jsonb_array_elements_text($1::jsonb -> file_name)) AS groups
+       FROM documents
+     )
+     UPDATE documents d
+     SET allowed_groups = t.groups
+     FROM target t
+     WHERE d.id = t.id AND d.allowed_groups IS DISTINCT FROM t.groups
+     RETURNING d.file_name, d.allowed_groups`,
+    [JSON.stringify(Object.fromEntries(acl))],
+  );
+  return rows.map((row) => ({ fileName: row.file_name, allowedGroups: row.allowed_groups }));
+}
+
 export interface SearchResult {
   fileName: string;
   chunkIndex: number;
@@ -103,7 +136,13 @@ export interface SearchResult {
 }
 
 /**
- * Les `limit` chunks les plus proches du vecteur de la question.
+ * Les `limit` chunks les plus proches du vecteur de la question, parmi ceux
+ * que l'utilisateur a le droit de lire.
+ *
+ * Contrôle d'accès : `d.allowed_groups && $3` (« au moins un groupe en
+ * commun ») est dans le WHERE, donc appliqué AVANT le tri et le LIMIT. Les
+ * `limit` résultats sont les plus proches parmi les chunks autorisés ; un
+ * chunk interdit ne sort jamais de la base.
  *
  * <=> est l'opérateur « distance cosinus » de pgvector (1 − similarité) :
  * on trie par distance croissante et on affiche 1 − distance comme score.
@@ -119,11 +158,17 @@ SELECT d.file_name,
        1 - (c.embedding <=> $1::vector) AS score
 FROM chunks c
 JOIN documents d ON d.id = c.document_id
+WHERE d.allowed_groups && $3::text[]
 ORDER BY c.embedding <=> $1::vector
 LIMIT $2`;
 
-export async function searchChunks(pool: pg.Pool, queryVector: number[], limit: number): Promise<SearchResult[]> {
-  const { rows } = await pool.query<SearchRow>(SEARCH_SQL, [toSqlVector(queryVector), limit]);
+export async function searchChunks(
+  pool: pg.Pool,
+  queryVector: number[],
+  limit: number,
+  userGroups: readonly string[],
+): Promise<SearchResult[]> {
+  const { rows } = await pool.query<SearchRow>(SEARCH_SQL, [toSqlVector(queryVector), limit, userGroups]);
   return rows.map(toSearchResult);
 }
 
@@ -137,7 +182,9 @@ export async function searchChunks(pool: pg.Pool, queryVector: number[], limit: 
  *    n'aurait presque jamais de chunk contenant tous ses mots.
  *    quote_literal protège les lexèmes qui contiennent un point (next.js) ;
  *    le cast ::tsquery ne re-racinise pas des mots déjà racinisés.
- * 3. @@ garde les chunks qui contiennent au moins un lexème (index GIN),
+ * 3. Contrôle d'accès : comme pour SEARCH_SQL, le filtre sur les groupes
+ *    est dans le WHERE, avant le classement et le LIMIT.
+ * 4. @@ garde les chunks qui contiennent au moins un lexème (index GIN),
  *    ts_rank les classe : plus il y a d'occurrences des termes, plus le score
  *    est haut. Une question faite uniquement de mots vides donne une requête
  *    NULL, donc aucun résultat.
@@ -157,11 +204,17 @@ FROM chunks c
 JOIN documents d ON d.id = c.document_id
 CROSS JOIN q
 WHERE c.content_tsv @@ q.query
+  AND d.allowed_groups && $3::text[]
 ORDER BY score DESC, c.id
 LIMIT $2`;
 
-export async function searchLexical(pool: pg.Pool, question: string, limit: number): Promise<SearchResult[]> {
-  const { rows } = await pool.query<SearchRow>(LEXICAL_SEARCH_SQL, [question, limit]);
+export async function searchLexical(
+  pool: pg.Pool,
+  question: string,
+  limit: number,
+  userGroups: readonly string[],
+): Promise<SearchResult[]> {
+  const { rows } = await pool.query<SearchRow>(LEXICAL_SEARCH_SQL, [question, limit, userGroups]);
   return rows.map(toSearchResult);
 }
 

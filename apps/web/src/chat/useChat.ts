@@ -16,6 +16,8 @@ export interface UseChatResult {
   /** Journal des événements, du plus ancien au plus récent. */
   log: LogEntry[];
   clearLog: () => void;
+  /** Annule le flux en cours puis vide les messages et l'erreur (le journal est conservé). */
+  reset: () => void;
 }
 
 /** Au-delà, les plus anciennes lignes du journal sont oubliées. */
@@ -26,8 +28,9 @@ const MAX_LOG_MESSAGE = 4_000;
 /**
  * Porte tout l'état du chat. L'historique vit uniquement dans l'état React :
  * recharger la page repart de zéro, c'est voulu.
+ * `userId` est l'identité envoyée au serveur ; vide tant qu'aucun utilisateur n'est choisi.
  */
-export function useChat(): UseChatResult {
+export function useChat(userId: string): UseChatResult {
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [status, setStatus] = useState<ChatStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +52,7 @@ export function useChat(): UseChatResult {
   const clearLog = useCallback(() => setLog([]), []);
 
   const run = useCallback(async (history: UiMessage[]) => {
+    if (!userId) return;
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -58,11 +62,17 @@ export function useChat(): UseChatResult {
     setError(null);
     append("state", "status → streaming");
 
+    // Un flux annulé (Stop, changement d'utilisateur) ne doit plus toucher aux messages,
+    // même si des événements déjà lus restent à traiter.
+    const updateAssistant = (update: (message: UiMessage) => UiMessage) => {
+      if (!controller.signal.aborted) setMessages((prev) => updateLastAssistant(prev, update));
+    };
+
     const wire = toWireHistory(history);
     append("send", `POST /api/chat avec ${wire.length} message(s), ${JSON.stringify(wire).length} octets`);
 
     try {
-      await streamChat(wire, controller.signal, {
+      await streamChat(wire, userId, controller.signal, {
         onHttp: (code) => append("http", `réponse HTTP ${code}`),
         // Les événements "debug" ont leur propre ligne, plus lisible, via onDebug.
         onEvent: (event, data) => {
@@ -72,18 +82,16 @@ export function useChat(): UseChatResult {
           const arrow = kind === "model_request" ? "→ envoyé au modèle" : "← reçu du modèle";
           append("model", `${arrow} (tour ${turn})`, payload);
         },
-        onDelta: (text) => setMessages((prev) => updateLastAssistant(prev, (m) => ({ ...m, content: m.content + text }))),
-        onSources: (sources) => setMessages((prev) => updateLastAssistant(prev, (m) => ({ ...m, sources }))),
-        onToolCall: (name, input) =>
-          setMessages((prev) =>
-            updateLastAssistant(prev, (m) => ({ ...m, tools: [...(m.tools ?? []), { name, input }] })),
-          ),
-        onToolResult: (name, ok) =>
-          setMessages((prev) => updateLastAssistant(prev, (m) => ({ ...m, tools: markToolResult(m.tools, name, ok) }))),
+        onDelta: (text) => updateAssistant((m) => ({ ...m, content: m.content + text })),
+        onSources: (sources) => updateAssistant((m) => ({ ...m, sources })),
+        onToolCall: (name, input) => updateAssistant((m) => ({ ...m, tools: [...(m.tools ?? []), { name, input }] })),
+        onToolResult: (name, ok) => updateAssistant((m) => ({ ...m, tools: markToolResult(m.tools, name, ok) })),
       });
       setStatus("idle");
       append("state", "status → idle (réponse complète)");
     } catch (err) {
+      // Flux remplacé par reset() : l'état appartient déjà à la conversation suivante.
+      if (abortRef.current !== controller) return;
       setMessages(dropEmptyTrailingAssistant);
       if (controller.signal.aborted) {
         // Arrêt volontaire : pas une erreur.
@@ -98,16 +106,16 @@ export function useChat(): UseChatResult {
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
     }
-  }, [append]);
+  }, [append, userId]);
 
   const send = useCallback(
     (text: string) => {
       const content = text.trim();
-      if (!content || status === "streaming") return;
+      if (!content || !userId || status === "streaming") return;
       append("action", `send (${content.length} caractères)`);
       void run([...messages, { role: "user", content }]);
     },
-    [messages, status, run, append],
+    [messages, status, userId, run, append],
   );
 
   const stop = useCallback(() => {
@@ -117,14 +125,28 @@ export function useChat(): UseChatResult {
   }, [append]);
 
   const retry = useCallback(() => {
-    if (status === "streaming") return;
+    if (status === "streaming" || !userId) return;
     const history = trimToLastUserMessage(messages);
     if (history.length === 0) return;
     append("action", "retry : renvoi jusqu'au dernier message utilisateur");
     void run(history);
-  }, [messages, status, run, append]);
+  }, [messages, status, userId, run, append]);
 
-  return { messages, status, error, send, stop, retry, log, clearLog };
+  const reset = useCallback(() => {
+    // Changement d'utilisateur : on repart d'une conversation vide. Sinon l'historique renvoyé
+    // au modèle contiendrait des réponses tirées des documents de l'utilisateur précédent
+    // (fuite par l'historique), et l'écran afficherait ses sources.
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    setMessages([]);
+    setError(null);
+    setStatus("idle");
+    append("action", "reset : conversation vidée (changement d'utilisateur)");
+  }, [append]);
+
+  return { messages, status, error, send, stop, retry, log, clearLog, reset };
 }
 
 /** Le champ data d'un événement SSE est du JSON chez nous, mais on reste tolérant. */

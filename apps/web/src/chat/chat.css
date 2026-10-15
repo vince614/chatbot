@@ -185,6 +185,39 @@ body.resizing-horizontal {
   font-size: 0.8rem;
 }
 
+.chat__header-side {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.user-select__input {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+}
+
+.user-select__input:focus-visible {
+  outline: none;
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+}
+
+.user-select__error {
+  color: var(--danger);
+}
+
 .status {
   display: inline-flex;
   align-items: center;
@@ -558,9 +591,17 @@ body.resizing-horizontal {
 
 .composer {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 12px 0 20px;
   border-top: 1px solid var(--border);
+}
+
+.composer__hint {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 
 .composer__input {

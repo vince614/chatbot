@@ -1,14 +1,17 @@
-// npm run ingest — ingère les PDF de data/pdfs/ dans la base.
+// npm run ingest — ingère les PDF de data/pdfs/ dans la base, puis applique
+// les droits de data/pdfs/acl.json.
 // Idempotent : un fichier inchangé (même sha256) est ignoré, un fichier
-// modifié est entièrement réingéré.
+// modifié est entièrement réingéré. Les droits, eux, sont réappliqués à chaque
+// fois : changer acl.json ne modifie pas le sha256 des PDF.
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { ConfigError } from "../../config.js";
+import { type Acl, ACL_FILE, loadAcl } from "../acl.js";
 import { loadDatabaseConfig, loadEmbeddingConfig, PDF_DIR } from "../config.js";
 import { createPool } from "../db/pool.js";
-import { getDocumentHashes, replaceDocument } from "../db/repository.js";
+import { applyAcl, getDocumentHashes, replaceDocument } from "../db/repository.js";
 import { assertEmbeddingDimension } from "../db/schema.js";
 import { splitPdf } from "../document.js";
 import { createEmbeddingClient, type EmbeddingClient } from "../embeddings/index.js";
@@ -27,7 +30,10 @@ async function main(): Promise<void> {
   try {
     await assertEmbeddingDimension(pool, dbConfig.embeddingDimension);
 
+    // L'ACL est lue en premier : invalide, rien n'est ingéré ni modifié.
+    const acl = await loadAcl();
     const files = await listPdfs(PDF_DIR);
+    warnAboutAcl(acl, files);
     const known = await getDocumentHashes(pool);
     console.log(`${files.length} PDF trouvé(s) dans ${PDF_DIR}`);
 
@@ -36,7 +42,12 @@ async function main(): Promise<void> {
 
     for (const fileName of files) {
       if (abort.signal.aborted) break;
-      const outcome = await ingestFile(fileName, known.get(fileName), { pool, embedder, signal: abort.signal });
+      const outcome = await ingestFile(fileName, known.get(fileName), {
+        pool,
+        embedder,
+        allowedGroups: acl.get(fileName) ?? [],
+        signal: abort.signal,
+      });
       outcomes[outcome]++;
     }
 
@@ -44,6 +55,13 @@ async function main(): Promise<void> {
     for (const name of absent) {
       console.warn(`⚠ ${name} : présent en base mais plus dans le dossier (conservé).`);
     }
+
+    // Les droits de tous les documents en base, inchangés compris.
+    const changed = await applyAcl(pool, acl);
+    for (const { fileName, allowedGroups } of changed) {
+      console.log(`🔒 ${fileName} : droits → ${allowedGroups.length > 0 ? allowedGroups.join(", ") : "personne"}`);
+    }
+    console.log(`Droits : ${changed.length} document(s) mis à jour, les autres étaient déjà à jour.`);
 
     console.log(
       `\nTerminé en ${seconds(started)} : ${outcomes.ingested} ingéré(s), ` +
@@ -58,6 +76,7 @@ async function main(): Promise<void> {
 interface IngestDeps {
   pool: ReturnType<typeof createPool>;
   embedder: EmbeddingClient;
+  allowedGroups: string[];
   signal: AbortSignal;
 }
 
@@ -89,7 +108,13 @@ async function ingestFile(fileName: string, knownHash: string | undefined, deps:
     );
 
     // 3. Écriture (transaction courte).
-    await replaceDocument(deps.pool, { fileName, sha256, chunks, embeddings: vectors });
+    await replaceDocument(deps.pool, {
+      fileName,
+      sha256,
+      chunks,
+      embeddings: vectors,
+      allowedGroups: deps.allowedGroups,
+    });
 
     const verb = knownHash === undefined ? "nouveau" : "modifié, réingéré";
     console.log(
@@ -102,6 +127,21 @@ async function ingestFile(fileName: string, knownHash: string | undefined, deps:
     // précédente en base (s'il y en a une) reste intacte grâce à la transaction.
     console.error(`✗ ${fileName} : ${error instanceof Error ? error.message : String(error)}`);
     return "failed";
+  }
+}
+
+/**
+ * Signale les incohérences de l'ACL sans bloquer : un PDF sans entrée (il
+ * sera invisible, c'est voulu mais rarement souhaité) et une entrée sans PDF
+ * (faute de frappe probable dans le nom).
+ */
+function warnAboutAcl(acl: Acl, files: string[]): void {
+  for (const file of files) {
+    const groups = acl.get(file);
+    if (!groups || groups.length === 0) console.warn(`⚠ ${file} : aucun groupe dans ${ACL_FILE}, visible par personne.`);
+  }
+  for (const name of acl.keys()) {
+    if (!files.includes(name)) console.warn(`⚠ acl.json cite « ${name} », absent de data/pdfs/ (faute de frappe ?).`);
   }
 }
 

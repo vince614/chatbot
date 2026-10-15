@@ -1,6 +1,8 @@
 import type { FastifyBaseLogger, FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
+import { identifyUser } from "../auth/fake-identity.js";
+import type { User } from "../auth/users.js";
 import type { ChatMessage, ContentPart, LlmClient, LlmEvent } from "../llm/index.js";
 import { buildRagPrompt } from "../rag/prompt.js";
 import type { Retrieve, RetrievedChunk } from "../rag/retrieve.js";
@@ -63,10 +65,23 @@ export interface ChatRoutesOptions {
   llm: LlmClient;
   tools: ToolRegistry;
   retrieve: Retrieve;
+  /** Annuaire des utilisateurs (data/users.json), par identifiant. */
+  users: ReadonlyMap<string, User>;
 }
 
-export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { llm, tools, retrieve }) => {
+export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { llm, tools, retrieve, users }) => {
   app.post("/chat", async (request, reply) => {
+    // 0. Qui demande ? Avant tout le reste : sans identité, ni validation du
+    //    corps, ni recherche, ni appel au modèle. (Remplaçant d'authentification :
+    //    voir auth/fake-identity.ts.)
+    const user = identifyUser(request, users);
+    if (!user) {
+      // Ni l'en-tête reçu ni la raison exacte dans la réponse : absent et
+      // inconnu sont indiscernables pour le client.
+      request.log.warn("requête sans utilisateur identifié");
+      return reply.code(401).send({ error: "Utilisateur non identifié." });
+    }
+
     const parsed = chatRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       // Réponse JSON classique : le flux SSE n'est pas encore ouvert.
@@ -91,7 +106,7 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { l
       // 1. Recherche à partir du dernier message utilisateur (garanti par le schéma).
       const messages = parsed.data.messages;
       const question = messages.at(-1)!.content;
-      const chunks = await searchDocuments(retrieve, question, controller.signal, request.log);
+      const chunks = await searchDocuments(retrieve, question, user, controller.signal, request.log);
 
       // 2. Les sources partent avant le premier delta : le navigateur peut les
       //    rattacher à la réponse dès qu'elle commence.
@@ -137,22 +152,26 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { l
 };
 
 /**
- * Appelle retrieve avec un délai maximal, et journalise le résultat : nombre de
- * passages, scores, durée. Jamais la question ni le contenu des passages.
+ * Appelle retrieve avec un délai maximal et les groupes de l'utilisateur, et
+ * journalise le résultat : identifiant de l'utilisateur, nombre de passages,
+ * scores, durée. Jamais la question, le contenu des passages ni les groupes.
  */
 async function searchDocuments(
   retrieve: Retrieve,
   question: string,
+  user: User,
   clientSignal: AbortSignal,
   log: FastifyBaseLogger,
 ): Promise<RetrievedChunk[]> {
   const startedAt = performance.now();
   try {
     const chunks = await retrieve(question, {
+      userGroups: user.groupes,
       signal: AbortSignal.any([clientSignal, AbortSignal.timeout(RETRIEVAL_TIMEOUT_MS)]),
     });
     log.info(
       {
+        userId: user.id,
         chunks: chunks.length,
         scores: chunks.map((chunk) => Number(chunk.score.toFixed(3))),
         durationMs: Math.round(performance.now() - startedAt),

@@ -42,6 +42,11 @@ export interface RunConfig {
    * hybride : ils ont tous été faits en vectoriel.
    */
   recherche?: { mode: string; candidats_par_recherche?: number; rrf_k?: number };
+  /**
+   * L'utilisateur dont les droits filtrent la recherche. Absent dans les runs
+   * antérieurs aux droits d'accès : tous les documents étaient visibles.
+   */
+  utilisateur?: { id: string; groupes: string[] };
   /** Commit Git du code, avec « -modifie » si des fichiers n'étaient pas commités. */
   commit: string;
   /** Empreintes : un prompt ou des questions modifiés rendent deux runs incomparables. */

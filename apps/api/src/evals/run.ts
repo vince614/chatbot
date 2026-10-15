@@ -1,4 +1,4 @@
-// npm run eval:run [-- --mode vector|lexical|hybrid] [--only q01,q19]
+// npm run eval:run -- --user <id> [--mode vector|lexical|hybrid] [--only q01,q19]
 // Rejoue les questions de evals/questions.json dans la même chaîne que /chat
 // (retrieve → buildRagPrompt → LlmClient), sans HTTP ni historique, une par une.
 import { execSync } from "node:child_process";
@@ -8,6 +8,7 @@ import { parseArgs } from "node:util";
 
 import { z } from "zod";
 
+import { requireUser } from "../auth/users.js";
 import { ConfigError, loadConfig } from "../config.js";
 import { createLlmClient, type LlmClient, type LlmEffort } from "../llm/index.js";
 import { loadDatabaseConfig, loadEmbeddingConfig, loadSearchMode } from "../rag/config.js";
@@ -47,7 +48,11 @@ import {
 const EFFORT: LlmEffort = "medium";
 
 async function main(): Promise<void> {
-  const { values } = parseArgs({ options: { only: { type: "string" }, mode: { type: "string" } } });
+  const { values } = parseArgs({
+    options: { user: { type: "string" }, only: { type: "string" }, mode: { type: "string" } },
+  });
+  // Obligatoire, sans défaut : un run mesure ce que voit un utilisateur donné.
+  const user = await requireUser(values.user);
   // Sans --mode : celui de RAG_SEARCH_MODE, comme /chat.
   const mode = (values.mode ?? loadSearchMode()) as SearchMode;
   if (!SEARCH_MODES.includes(mode)) {
@@ -83,6 +88,7 @@ async function main(): Promise<void> {
       k: DEFAULT_K,
       recherche:
         mode === "hybrid" ? { mode, candidats_par_recherche: HYBRID_CANDIDATES, rrf_k: RRF_K } : { mode },
+      utilisateur: { id: user.id, groupes: user.groupes },
       commit: gitCommit(),
       sha256_prompt_systeme: sha256(RAG_SYSTEM_PROMPT),
       sha256_questions: sha256(questionsText),
@@ -93,14 +99,14 @@ async function main(): Promise<void> {
     await mkdir(RUNS_DIR, { recursive: true });
     const run: RunFile = { config, resultats: [] };
     console.log(
-      `${questions.length} question(s) · ${config.llm.modele} (effort ${EFFORT}) · recherche ${mode} · k=${config.k}`,
+      `${questions.length} question(s) · ${config.llm.modele} (effort ${EFFORT}) · recherche ${mode} · utilisateur ${user.id} · k=${config.k}`,
     );
 
     // Une question après l'autre : des appels parallèles se disputeraient les
     // quotas (Voyage : 3 requêtes/min sur ce compte) et rendraient les durées
     // incomparables.
     for (const [i, question] of questions.entries()) {
-      const result = await runQuestion(question, { retrieve, llm });
+      const result = await runQuestion(question, { retrieve, llm, userGroups: user.groupes });
       run.resultats.push(result);
       // Écrit après chaque question : un run interrompu garde ce qu'il a fait.
       await writeFile(runFile, `${JSON.stringify(run, null, 2)}\n`);
@@ -130,7 +136,7 @@ async function main(): Promise<void> {
  */
 async function runQuestion(
   question: EvalQuestion,
-  { retrieve, llm }: { retrieve: Retrieve; llm: LlmClient },
+  { retrieve, llm, userGroups }: { retrieve: Retrieve; llm: LlmClient; userGroups: readonly string[] },
 ): Promise<RunResult> {
   const startedAt = performance.now();
   const result: RunResult = {
@@ -145,7 +151,7 @@ async function runQuestion(
   };
 
   try {
-    const chunks = await retrieve(question.question, { k: DEFAULT_K });
+    const chunks = await retrieve(question.question, { userGroups, k: DEFAULT_K });
     result.chunks_recuperes = chunks.map((chunk, i) => ({
       rang: i + 1,
       fichier: chunk.fileName,

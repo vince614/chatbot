@@ -48,7 +48,13 @@ Le front relaie tout appel à `/api/*` vers le backend (proxy Vite).
 | Route | Rôle |
 | --- | --- |
 | `GET /api/health` | `{ "status": "ok" }` |
-| `POST /api/chat` | Corps `{ messages: [{ role, content }], debug?: boolean }`. Réponse en flux SSE. |
+| `GET /api/users` | `{ users: [{ id, nom }] }` : les utilisateurs fictifs, pour le sélecteur de l'interface (jamais leurs groupes) |
+| `POST /api/chat` | En-tête `X-User-Id` obligatoire (sinon 401). Corps `{ messages: [{ role, content }], debug?: boolean }`. Réponse en flux SSE. |
+
+`X-User-Id` est un **remplaçant d'authentification** pour l'exercice
+(`apps/api/src/auth/fake-identity.ts`) : n'importe quel client peut se
+déclarer n'importe qui. En production, l'identité viendrait d'une session ou
+d'un jeton vérifié par le serveur.
 
 Événements du flux `/api/chat` :
 
@@ -80,9 +86,10 @@ npm run db:migrate                        # crée les tables documents et chunks
 # déposer des PDF dans apps/api/data/pdfs/ (ignoré par git)
 npm run rag:preview -- mon.pdf [--short]  # affiche les chunks d'un PDF, sans rien écrire
 npm run rag:embed-check                   # vérifie la configuration Voyage sur 3 phrases
-npm run ingest                            # ingère data/pdfs/ (idempotent, par sha256)
-npm run search -- "ma question" [--mode vector|lexical|hybrid] [--sql] [--explain]   # 5 chunks les mieux classés
-npm run ask -- "ma question" [--k 5]      # prompt RAG assemblé, réponse, sources citées
+cp apps/api/data/pdfs/acl.example.json apps/api/data/pdfs/acl.json   # droits : fichier → groupes autorisés
+npm run ingest                            # ingère data/pdfs/ (idempotent, par sha256) et réapplique l'ACL
+npm run search -- --user bruno "ma question" [--mode vector|lexical|hybrid] [--sql] [--explain]   # 5 chunks autorisés les mieux classés
+npm run ask -- --user alice "ma question" [--k 5]   # prompt RAG assemblé, réponse, sources citées
 npm run rag:sample-pdf                    # génère data/pdfs/reglement-interieur.pdf (document de test fictif)
 ```
 
@@ -93,7 +100,7 @@ vont dans `apps/api/evals/runs/` (ignoré par git : ils contiennent des
 extraits des documents).
 
 ```bash
-npm run eval:run [-- --mode hybrid] [--only q01,q13]   # rejoue les questions → <date>.json, <date>.md, <date>.notes.json
+npm run eval:run -- --user chloe [--mode hybrid] [--only q01,q13]   # rejoue les questions → <date>.json, <date>.md, <date>.notes.json
 npm run eval:score -- <date>              # additionne les notes saisies à la main, détail par type, échecs
 npm run eval:compare -- <A> <B> [<C>]     # rang du bon passage dans chaque run, calculé depuis les pages attendues
 ```
@@ -107,6 +114,14 @@ La recherche a trois modes (`RAG_SEARCH_MODE`, ou `--mode` dans les
 scripts) : `vector` (pgvector, distance cosinus), `lexical` (plein texte
 Postgres, configuration `french`, index GIN) et `hybrid` (les deux en
 parallèle, fusionnées par Reciprocal Rank Fusion).
+
+**Droits d'accès.** Chaque document a une liste de groupes autorisés
+(`data/pdfs/acl.json`, ignoré par Git ; un PDF absent n'est visible par
+personne), chaque utilisateur une liste de groupes (`data/users.json`). La
+recherche ne renvoie que les chunks des documents qui partagent au moins un
+groupe avec l'utilisateur, filtrés dans le `WHERE` de chaque requête SQL.
+Avec l'ACL d'exemple : alice (`rh`) voit le règlement, bruno (`tech`)
+DiscordInvites, chloe les deux.
 
 Pour arrêter la base : `docker compose down` (les données restent dans le
 volume), ou `docker compose down -v` pour tout effacer.
@@ -144,11 +159,13 @@ ne sont pas comparables.
 ```
 apps/api/src/
 ├─ server.ts, config.ts     démarrage Fastify, configuration
-├─ routes/chat.ts           POST /api/chat : recherche, sources, boucle modèle ↔ outils, flux SSE
+├─ routes/chat.ts           POST /api/chat : identité, recherche, sources, boucle modèle ↔ outils, flux SSE
+├─ auth/                    utilisateurs fictifs (users.ts), X-User-Id (fake-identity.ts, remplaçant d'authentification)
 ├─ llm/                     LlmClient + fabrique ; seul anthropic.ts importe le SDK
 ├─ tools/                   registre d'outils (validation Zod, délai, erreurs → résultat)
 └─ rag/
-   ├─ retrieve.ts           createRetriever → retrieve(question, { k })
+   ├─ retrieve.ts           createRetriever → retrieve(question, { userGroups, k, mode })
+   ├─ acl.ts                lecture et validation de data/pdfs/acl.json
    ├─ prompt.ts             prompt système RAG, buildRagPrompt, extractCitations (purs)
    ├─ pdf/, text/           extraction, nettoyage, découpage (fonctions pures)
    ├─ embeddings/           EmbeddingClient + fabrique ; seul voyage.ts connaît l'API Voyage
@@ -176,3 +193,4 @@ appuyées sur le code, questions et corrigé.
 | `docs/cours/jour-2-recherche-reponse.md` | Jour 2 · La réponse sourcée : `retrieve`, prompt RAG, `/chat`, citations dans l'interface |
 | `docs/cours/jour-2-jeu-de-test.md` | Jour 2 · Le jeu de test : questions, runs, notation, lecture des échecs |
 | `docs/cours/jour-3-hybride.md` | Jour 3 · La recherche hybride : plein texte Postgres, identifiants, fusion RRF, comparaison des modes |
+| `docs/cours/jour-3-droits.md` | Jour 3 · Les droits d'accès : ACL par document, filtre dans la recherche, identité dans l'API |

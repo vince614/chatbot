@@ -1,18 +1,47 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 
+import { fetchUsers, type ChatUser } from "./api";
 import { Composer } from "./Composer";
 import { ErrorBanner } from "./ErrorBanner";
 import { EventLogPanel, type LogPlacement } from "./EventLogPanel";
 import { MessageList } from "./MessageList";
 import { ResizeHandle } from "./ResizeHandle";
 import { useChat } from "./useChat";
+import { UserSelect, type UsersState } from "./UserSelect";
 import "./chat.css";
 
 export function Chat() {
-  const { messages, status, error, send, stop, retry, log, clearLog } = useChat();
+  const [userId, setUserId] = useState("");
+  const [users, setUsers] = useState<ChatUser[]>([]);
+  const [usersState, setUsersState] = useState<UsersState>("loading");
+  const { messages, status, error, send, stop, retry, log, clearLog, reset } = useChat(userId);
   const [placement, setPlacement] = useState<LogPlacement>(readPlacement);
   const [logWidth, setLogWidth] = useState(() => readSize(WIDTH_KEY, DEFAULT_WIDTH));
   const [logHeight, setLogHeight] = useState(() => readSize(HEIGHT_KEY, DEFAULT_HEIGHT));
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchUsers(controller.signal)
+      .then((list) => {
+        setUsers(list);
+        setUsersState("ready");
+        // Le dernier choix n'est repris que s'il existe encore dans la liste reçue.
+        const remembered = readUserId();
+        if (list.some((user) => user.id === remembered)) setUserId(remembered);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setUsersState("error");
+      });
+    return () => controller.abort();
+  }, []);
+
+  const handleUserChange = (next: string) => {
+    if (next === userId) return;
+    // Géré ici, pas dans un effet : la conversation est vidée dans le même geste que le choix.
+    reset();
+    setUserId(next);
+    writeUserId(next);
+  };
 
   const togglePlacement = () => {
     const next: LogPlacement = placement === "side" ? "bottom" : "side";
@@ -34,17 +63,25 @@ export function Chat() {
             <h1>Chatbot</h1>
             <p className="chat__subtitle">Streaming, outils et journal en direct</p>
           </div>
-          <span className={`status status--${status}`}>
-            <span className="status__dot" aria-hidden="true" />
-            {STATUS_LABEL[status]}
-          </span>
+          <div className="chat__header-side">
+            <UserSelect users={users} state={usersState} value={userId} onChange={handleUserChange} />
+            <span className={`status status--${status}`}>
+              <span className="status__dot" aria-hidden="true" />
+              {STATUS_LABEL[status]}
+            </span>
+          </div>
         </header>
 
         <MessageList messages={messages} status={status} />
 
         {status === "error" && error && <ErrorBanner message={error} onRetry={retry} />}
 
-        <Composer disabled={status === "streaming"} onSend={send} onStop={stop} />
+        <Composer
+          disabled={status === "streaming"}
+          onSend={send}
+          onStop={stop}
+          lockedHint={userId ? undefined : "Choisis un utilisateur pour pouvoir écrire."}
+        />
       </div>
 
       {placement === "side" ? (
@@ -74,6 +111,7 @@ export function Chat() {
 
 const STATUS_LABEL = { idle: "Prêt", streaming: "Génération", error: "Erreur" } as const;
 
+const USER_KEY = "chatbot.userId";
 const PLACEMENT_KEY = "chatbot.logPlacement";
 const WIDTH_KEY = "chatbot.logWidth";
 const HEIGHT_KEY = "chatbot.logHeight";
@@ -104,5 +142,22 @@ function readPlacement(): LogPlacement {
     return localStorage.getItem(PLACEMENT_KEY) === "bottom" ? "bottom" : "side";
   } catch {
     return "side";
+  }
+}
+
+/** Confort par navigateur : le dernier utilisateur choisi, revalidé contre la liste du serveur. */
+function readUserId(): string {
+  try {
+    return localStorage.getItem(USER_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeUserId(userId: string): void {
+  try {
+    localStorage.setItem(USER_KEY, userId);
+  } catch {
+    // Stockage indisponible : le choix vaut pour la session seulement.
   }
 }

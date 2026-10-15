@@ -1,6 +1,6 @@
 # Jour 3 · Cours 1 — La recherche hybride
 
-> [Sommaire](README.md) · Précédent : [Jour 2 · Cours 3 — Le jeu de test](jour-2-jeu-de-test.md) · [Approfondissement : le code](approfondissement/jour-3-hybride.md)
+> [Sommaire](README.md) · Précédent : [Jour 2 · Cours 3 — Le jeu de test](jour-2-jeu-de-test.md) · Suivant : [Jour 3 · Cours 2 — Les droits d'accès](jour-3-droits.md) · [Approfondissement : le code](approfondissement/jour-3-hybride.md)
 
 > **Prérequis.** [Le jeu de test](jour-2-jeu-de-test.md) : 20 questions,
 > `eval:run` et `eval:score`. La recherche est vectorielle seulement.

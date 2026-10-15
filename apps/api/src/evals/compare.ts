@@ -26,7 +26,10 @@ async function main(): Promise<void> {
 
   console.log("Runs");
   runs.forEach(({ id, run }, i) => {
-    console.log(`  ${labels[i]}  ${id}  recherche ${modeOf(run).padEnd(7)}  commit ${run.config.commit}`);
+    console.log(
+      `  ${labels[i]}  ${id}  recherche ${modeOf(run).padEnd(7)}  ` +
+        `utilisateur ${(run.config.utilisateur?.id ?? "—").padEnd(6)}  commit ${run.config.commit}`,
+    );
   });
   warnIfNotComparable(runs.map((r) => r.run));
 
@@ -115,6 +118,8 @@ function warnIfNotComparable(runs: RunFile[]): void {
     ["embeddings", (run) => run.config.embeddings],
     ["découpage", (run) => run.config.decoupage],
     ["k", (run) => run.config.k],
+    // Un autre utilisateur voit d'autres documents : la recherche n'est plus la même.
+    ["utilisateur", (run) => run.config.utilisateur ?? null],
   ];
   const differing = checks
     .filter(([, read]) => new Set(runs.map((run) => JSON.stringify(read(run)))).size > 1)

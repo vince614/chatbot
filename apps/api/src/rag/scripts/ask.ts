@@ -1,8 +1,9 @@
-// npm run ask -- "ma question" [--k 5]
+// npm run ask -- --user <id> "ma question" [--k 5]
 // Pose une question aux documents, hors du serveur : affiche le prompt
 // assemblé, la réponse du modèle en flux, puis les sources citées.
 import { parseArgs } from "node:util";
 
+import { requireUser } from "../../auth/users.js";
 import { ConfigError, loadConfig } from "../../config.js";
 import { createLlmClient } from "../../llm/index.js";
 import { loadDatabaseConfig, loadEmbeddingConfig, loadSearchMode } from "../config.js";
@@ -17,16 +18,17 @@ const RULE = "━".repeat(72);
 async function main(): Promise<void> {
   const { positionals, values } = parseArgs({
     allowPositionals: true,
-    options: { k: { type: "string", default: String(DEFAULT_K) } },
+    options: { user: { type: "string" }, k: { type: "string", default: String(DEFAULT_K) } },
   });
 
   const question = positionals.join(" ").trim();
   if (question === "") {
-    console.error('Usage : npm run ask -- "ma question" [--k 5]');
+    console.error('Usage : npm run ask -- --user <id> "ma question" [--k 5]');
     process.exitCode = 1;
     return;
   }
 
+  const user = await requireUser(values.user);
   const llm = createLlmClient(loadConfig().llm);
   const dbConfig = loadDatabaseConfig();
   const pool = createPool(dbConfig.databaseUrl);
@@ -40,7 +42,7 @@ async function main(): Promise<void> {
     });
 
     // 1. Recherche, 2. prompt.
-    const chunks = await retrieve(question, { k: Number(values.k) });
+    const chunks = await retrieve(question, { userGroups: user.groupes, k: Number(values.k) });
     const prompt = buildRagPrompt(question, chunks);
 
     console.log(`${RULE}\nPROMPT SYSTÈME\n${RULE}\n${prompt.system}\n`);

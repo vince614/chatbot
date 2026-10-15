@@ -10,6 +10,10 @@ import type { EmbeddingClient } from "./embeddings/index.js";
  * d'environnement : ses dépendances (base, client d'embeddings, mode par
  * défaut) lui sont données une fois pour toutes par createRetriever. Le script
  * `search`, la route /chat et l'évaluation appellent tous la même fonction.
+ *
+ * C'est aussi le point de contrôle d'accès : chaque requête SQL filtre sur les
+ * groupes de l'utilisateur. Ce qui sort de retrieve est autorisé ; le prompt
+ * et le modèle ne voient jamais rien d'autre.
  */
 
 /**
@@ -33,6 +37,12 @@ export interface SearchRanks {
 export type RetrievedChunk = SearchResult & { ranks?: SearchRanks };
 
 export interface RetrieveOptions {
+  /**
+   * Groupes de l'utilisateur qui pose la question. Obligatoire et sans valeur
+   * par défaut : oublier les droits est une erreur de compilation, pas une
+   * fuite. [] ne donne accès à rien.
+   */
+  userGroups: readonly string[];
   /** Nombre de passages à renvoyer (5 par défaut). */
   k?: number;
   /** Recherche à utiliser (par défaut : celle donnée à createRetriever). */
@@ -41,7 +51,8 @@ export interface RetrieveOptions {
   signal?: AbortSignal;
 }
 
-export type Retrieve = (question: string, options?: RetrieveOptions) => Promise<RetrievedChunk[]>;
+// options n'est pas optionnel : il porte userGroups.
+export type Retrieve = (question: string, options: RetrieveOptions) => Promise<RetrievedChunk[]>;
 
 export interface RetrieverDeps {
   pool: pg.Pool;
@@ -61,31 +72,44 @@ export const RRF_K = 60;
 export function createRetriever({ pool, embedder, defaultMode = "vector" }: RetrieverDeps): Retrieve {
   // La question devient un vecteur (input_type: "query"), puis les chunks
   // les plus proches, triés par distance cosinus croissante.
-  async function searchVector(text: string, limit: number, signal?: AbortSignal): Promise<SearchResult[]> {
+  async function searchVector(
+    text: string,
+    limit: number,
+    userGroups: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<SearchResult[]> {
     const queryVector = await embedder.embedQuery(text, { signal });
-    return searchChunks(pool, queryVector, limit);
+    return searchChunks(pool, queryVector, limit, userGroups);
   }
 
-  return async (question, { k = DEFAULT_K, mode = defaultMode, signal } = {}) => {
+  return async (question, { userGroups, k = DEFAULT_K, mode = defaultMode, signal }) => {
     const text = question.trim();
     if (text === "") throw new Error("La question est vide.");
     if (!Number.isInteger(k) || k < 1 || k > MAX_K) {
       throw new Error(`k doit être un entier entre 1 et ${MAX_K} (reçu : ${k}).`);
     }
+    // Le typage protège le code TypeScript ; ceci protège un appel venu
+    // d'ailleurs (JSON, JavaScript) qui passerait autre chose qu'un tableau.
+    if (!Array.isArray(userGroups)) throw new Error("userGroups doit être un tableau de groupes.");
+    // Aucun groupe : aucun document visible. Inutile d'appeler Voyage.
+    if (userGroups.length === 0) return [];
 
     switch (mode) {
       case "vector":
-        return searchVector(text, k, signal);
+        return searchVector(text, k, userGroups, signal);
       case "lexical":
         // Aucun appel au fournisseur d'embeddings : tout se passe dans Postgres.
-        return searchLexical(pool, text, k);
+        return searchLexical(pool, text, k, userGroups);
       case "hybrid": {
         // Les deux recherches sont indépendantes : on les lance en même temps,
         // la durée totale est celle de la plus lente (l'appel Voyage).
+        // Toutes deux filtrent sur userGroups : la fusion ne reçoit que des
+        // chunks autorisés. Une seule branche filtrée suffirait à faire fuiter
+        // les chunks interdits trouvés par l'autre.
         const candidates = Math.max(HYBRID_CANDIDATES, k);
         const [vector, lexical] = await Promise.all([
-          searchVector(text, candidates, signal),
-          searchLexical(pool, text, candidates),
+          searchVector(text, candidates, userGroups, signal),
+          searchLexical(pool, text, candidates, userGroups),
         ]);
         return fuseByRrf({ vector, lexical }).slice(0, k);
       }

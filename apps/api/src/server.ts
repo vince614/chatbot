@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 
+import { loadUsers } from "./auth/users.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { createLlmClient } from "./llm/index.js";
 import { loadDatabaseConfig, loadEmbeddingConfig, loadSearchMode } from "./rag/config.js";
@@ -11,6 +12,8 @@ import { calculateTool, createToolRegistry, getCurrentDatetimeTool } from "./too
 
 // Le serveur refuse de démarrer si la configuration est incomplète.
 const config = loadConfigOrExit();
+// Les utilisateurs fictifs (data/users.json), lus une fois au démarrage.
+const users = await exitOnConfigError(loadUsers());
 const llm = createLlmClient(config.llm);
 // Les outils sont déclarés ici, au démarrage : la route ne connaît que le registre.
 const tools = createToolRegistry([getCurrentDatetimeTool, calculateTool]);
@@ -35,12 +38,27 @@ pool.on("error", (error) => app.log.warn({ reason: error.message }, "connexion P
 await app.register(
   async (api) => {
     api.get("/health", async () => ({ status: "ok" }));
-    await api.register(chatRoutes, { llm, tools, retrieve });
+    // Pour le sélecteur d'utilisateur de l'interface (exercice : voir
+    // auth/fake-identity.ts). Identifiant et nom seulement, jamais les groupes.
+    api.get("/users", async () => ({ users: [...users.values()].map(({ id, nom }) => ({ id, nom })) }));
+    await api.register(chatRoutes, { llm, tools, retrieve, users });
   },
   { prefix: "/api" },
 );
 
 await app.listen({ port: config.port, host: "127.0.0.1" });
+
+async function exitOnConfigError<T>(promise: Promise<T>): Promise<T> {
+  try {
+    return await promise;
+  } catch (error) {
+    if (error instanceof ConfigError) {
+      console.error(`\n[config] ${error.message}\n`);
+      process.exit(1);
+    }
+    throw error;
+  }
+}
 
 function loadConfigOrExit() {
   try {
