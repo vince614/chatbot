@@ -65,7 +65,7 @@ export function renderReport(runId: string, run: RunFile, questions: EvalQuestio
   return [...header, ...sections].join("\n");
 }
 
-function renderQuestion(result: RunResult, question: EvalQuestion | undefined): string {
+export function renderQuestion(result: RunResult, question: EvalQuestion | undefined): string {
   const expectedPages = question?.avec_reponse ? formatSources(question.sources_attendues) : "— (aucune réponse dans les documents)";
   const retrieved = result.chunks_recuperes
     .map((c) => `${c.rang}. ${c.fichier} ${formatPages(c.pages)} (${c.score.toFixed(3)})`)

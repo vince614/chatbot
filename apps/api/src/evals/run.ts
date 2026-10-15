@@ -4,6 +4,7 @@
 import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 import { z } from "zod";
@@ -47,8 +48,14 @@ import {
  */
 const EFFORT: LlmEffort = "medium";
 
-async function main(): Promise<void> {
+/**
+ * Exécute un run complet et renvoie son identifiant (null si les arguments
+ * sont invalides). Appelée par la commande eval:run, et par eval qui enchaîne
+ * ensuite les graders.
+ */
+export async function executeRun(args: string[]): Promise<string | null> {
   const { values } = parseArgs({
+    args,
     options: { user: { type: "string" }, only: { type: "string" }, mode: { type: "string" } },
   });
   // Obligatoire, sans défaut : un run mesure ce que voit un utilisateur donné.
@@ -58,7 +65,7 @@ async function main(): Promise<void> {
   if (!SEARCH_MODES.includes(mode)) {
     console.error(`--mode doit valoir ${SEARCH_MODES.join(", ")} (reçu : "${mode}").`);
     process.exitCode = 1;
-    return;
+    return null;
   }
   const appConfig = loadConfig();
   const dbConfig = loadDatabaseConfig();
@@ -125,6 +132,7 @@ async function main(): Promise<void> {
     console.log(`\nRun écrit dans ${runFile}${errors > 0 ? ` (${errors} erreur(s))` : ""}`);
     console.log(`Rapport à noter : ${base}.md`);
     console.log(`Notes à saisir  : ${base}.notes.json`);
+    return runIdFromDate(startedAt);
   } finally {
     await pool.end();
   }
@@ -198,7 +206,10 @@ function gitCommit(): string {
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof ConfigError ? error.message : error);
-  process.exitCode = 1;
-});
+// Lancé directement (npm run eval:run) : on exécute. Importé par eval.ts : non.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  executeRun(process.argv.slice(2)).catch((error: unknown) => {
+    console.error(error instanceof ConfigError ? error.message : error);
+    process.exitCode = 1;
+  });
+}

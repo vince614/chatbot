@@ -2,15 +2,9 @@
 // Compare la recherche de plusieurs runs, sans notation manuelle : pour chaque
 // question, le rang auquel le bon passage apparaît, calculé à partir des pages
 // attendues de questions.json.
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-
-import { z } from "zod";
-
-import { type EvalQuestion, questionSchema, QUESTION_TYPES, QUESTIONS_FILE, type RunFile, RUNS_DIR, type Source } from "./types.js";
-
-/** Le bon passage doit figurer dans les TOP premiers chunks (ceux que reçoit le modèle). */
-const TOP = 5;
+import { loadQuestions, loadRun } from "./files.js";
+import { expectedRanks, gradeRecherche, TOP } from "./graders/recherche.js";
+import { type EvalQuestion, QUESTION_TYPES, type RunFile, type Source } from "./types.js";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -20,7 +14,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const questions = z.array(questionSchema).parse(JSON.parse(await readFile(QUESTIONS_FILE, "utf8")));
+  const questions = await loadQuestions();
   const runs = await Promise.all(args.map(loadRun));
   const labels = runs.map((_, i) => String.fromCharCode(65 + i)); // A, B, C…
 
@@ -48,9 +42,9 @@ async function main(): Promise<void> {
       const result = run.resultats.find((r) => r.id === question.id);
       if (!result) return "—";
       if (result.erreur) return "erreur";
-      const ranks = question.sources_attendues.map((source) => rankOf(source, result.chunks_recuperes));
-      // Une question à plusieurs sources (combinaison) n'est trouvée que si toutes le sont.
-      if (ranks.every((rank) => rank !== null && rank <= TOP)) found[i]!.add(question.id);
+      const ranks = expectedRanks(question, result);
+      // Même règle que la note « recherche » d'eval:grade : c'est le même grader.
+      if (gradeRecherche(question, result)?.score === 1) found[i]!.add(question.id);
       if ([...ranks].sort((a, b) => (a ?? Infinity) - (b ?? Infinity)).every((rank, j) => rank === j + 1)) first[i]!.add(question.id);
       return ranks.map((rank) => (rank === null ? "absent" : String(rank))).join(" + ");
     });
@@ -83,23 +77,6 @@ async function main(): Promise<void> {
     const cells = foundByRun.map((set) => `${subset.filter((q) => set.has(q.id)).length}/${subset.length}`);
     console.log(`  ${label.padEnd(15)} ${cells.map((cell) => cell.padStart(COL)).join("")}`);
   }
-}
-
-/**
- * Rang du premier chunk qui contient la source attendue : même fichier, et au
- * moins une page en commun. null si aucun chunk récupéré ne la couvre.
- */
-function rankOf(expected: Source, chunks: RunFile["resultats"][number]["chunks_recuperes"]): number | null {
-  const match = chunks
-    .filter((chunk) => chunk.fichier === expected.fichier && chunk.pages.some((page) => expected.pages.includes(page)))
-    .sort((a, b) => a.rang - b.rang)[0];
-  return match?.rang ?? null;
-}
-
-async function loadRun(arg: string): Promise<{ id: string; run: RunFile }> {
-  // Accepte l'identifiant seul ou le chemin de n'importe quel fichier du run.
-  const id = path.basename(arg).replace(/(\.notes)?\.(json|md)$/, "");
-  return { id, run: JSON.parse(await readFile(`${RUNS_DIR}${id}.json`, "utf8")) as RunFile };
 }
 
 /** Les runs d'avant la recherche hybride n'enregistraient pas de mode : ils étaient vectoriels. */

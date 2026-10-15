@@ -17,7 +17,11 @@
     "ask": "tsx src/rag/scripts/ask.ts",
     "eval:run": "tsx src/evals/run.ts",
     "eval:score": "tsx src/evals/score.ts",
-    "eval:compare": "tsx src/evals/compare.ts"
+    "eval:compare": "tsx src/evals/compare.ts",
+    "eval:grade": "tsx src/evals/grade.ts",
+    "eval:calibrate": "tsx src/evals/calibrate.ts",
+    "eval": "tsx src/evals/eval.ts",
+    "eval:history": "tsx src/evals/history.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",

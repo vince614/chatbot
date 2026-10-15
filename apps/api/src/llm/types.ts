@@ -50,6 +50,12 @@ export interface StreamChatParams {
   signal?: AbortSignal;
   /** Effort imposé ; sinon, celui du fournisseur par défaut. */
   effort?: LlmEffort;
+  /**
+   * Température (0 = le plus déterministe). Transmise seulement si elle est
+   * fournie : les modèles Claude récents (famille 5.x) la refusent avec une
+   * erreur 400, les 4.5 l'acceptent. Utilisée par le juge de l'évaluation.
+   */
+  temperature?: number;
 }
 
 /**

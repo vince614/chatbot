@@ -45,7 +45,7 @@ export class AnthropicLlmClient implements LlmClient {
     this.client = new Anthropic({ apiKey });
   }
 
-  async *streamChat({ system, messages, tools, signal, effort }: StreamChatParams): AsyncIterable<LlmEvent> {
+  async *streamChat({ system, messages, tools, signal, effort, temperature }: StreamChatParams): AsyncIterable<LlmEvent> {
     const stream = this.client.messages.stream(
       {
         model: this.model,
@@ -53,9 +53,10 @@ export class AnthropicLlmClient implements LlmClient {
         system,
         messages: messages.map(toAnthropicMessage),
         tools: tools?.map(toAnthropicTool),
-        // Pas de temperature : les modèles récents la refusent (400). L'effort
-        // est le réglage qui reste.
+        // L'effort est le réglage des modèles récents ; la température n'est
+        // envoyée que si l'appelant la fournit (refusée en 400 par la famille 5.x).
         ...(effort && { output_config: { effort } }),
+        ...(temperature !== undefined && { temperature }),
       },
       { signal },
     );

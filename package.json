@@ -23,7 +23,11 @@
     "ask": "npm run ask -w apps/api --",
     "eval:run": "npm run eval:run -w apps/api --",
     "eval:score": "npm run eval:score -w apps/api --",
-    "eval:compare": "npm run eval:compare -w apps/api --"
+    "eval:compare": "npm run eval:compare -w apps/api --",
+    "eval:grade": "npm run eval:grade -w apps/api --",
+    "eval:calibrate": "npm run eval:calibrate -w apps/api --",
+    "eval": "npm run eval -w apps/api --",
+    "eval:history": "npm run eval:history -w apps/api --"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

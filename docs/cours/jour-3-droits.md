@@ -1,6 +1,6 @@
 # Jour 3 · Cours 2 — Les droits d'accès
 
-> [Sommaire](README.md) · Précédent : [Jour 3 · Cours 1 — La recherche hybride](jour-3-hybride.md) · [Approfondissement : le code](approfondissement/jour-3-droits.md)
+> [Sommaire](README.md) · Précédent : [Jour 3 · Cours 1 — La recherche hybride](jour-3-hybride.md) · Suivant : [Jour 4 · Cours 1 — L'évaluation automatique](jour-4-evaluation.md) · [Approfondissement : le code](approfondissement/jour-3-droits.md)
 
 > **Prérequis.** [La recherche hybride](jour-3-hybride.md) : `retrieve` en
 > modes `vector`, `lexical` et `hybrid`.

@@ -103,6 +103,10 @@ extraits des documents).
 npm run eval:run -- --user chloe [--mode hybrid] [--only q01,q13]   # rejoue les questions → <date>.json, <date>.md, <date>.notes.json
 npm run eval:score -- <date>              # additionne les notes saisies à la main, détail par type, échecs
 npm run eval:compare -- <A> <B> [<C>]     # rang du bon passage dans chaque run, calculé depuis les pages attendues
+npm run eval -- --user chloe [--mode hybrid]   # run + graders (code et juge) → <date>.scores.json, rapport <date>.md, evals/history.jsonl
+npm run eval:grade -- <date>              # graders par code seuls, sur un run existant (sans modèle)
+npm run eval:calibrate -- <date> [--repeat 2]  # accord du juge avec les notes manuelles, stabilité
+npm run eval:history                      # évolution des scores, un run par ligne
 ```
 
 Le pipeline : extraction page par page (pdf.js), nettoyage (en-têtes et pieds
@@ -146,6 +150,7 @@ le chat renvoie alors une erreur « recherche indisponible ».
 | `EMBEDDING_MODEL` | Modèle d'embeddings | `voyage-3.5` |
 | `EMBEDDING_DIMENSION` | Dimension des vecteurs (256, 512, 1024 ou 2048). Figée dans la colonne SQL à la migration. | `1024` |
 | `RAG_SEARCH_MODE` | Recherche par défaut : `vector`, `lexical` ou `hybrid`. Optionnelle (`vector` si absente). | `vector` |
+| `EVAL_JUDGE_MODEL` | Modèle juge de l'exactitude (`npm run eval`), distinct de `LLM_MODEL` et acceptant `temperature: 0`. Optionnelle. | `claude-haiku-4-5` |
 
 Les clés ne sont jamais exposées au front : Vite ne publie que les variables
 préfixées `VITE_`, et `apps/web` n'a pas de fichier `.env`.
@@ -171,7 +176,7 @@ apps/api/src/
    ├─ embeddings/           EmbeddingClient + fabrique ; seul voyage.ts connaît l'API Voyage
    ├─ db/                   migrations, requêtes SQL
    └─ scripts/              migrate, preview, embed-check, ingest, search, ask, sample-pdf
-apps/api/src/evals/         run, rapport à noter, score (jeu de test)
+apps/api/src/evals/         run, graders (code + juge), scores, rapport, historique, calibration, comparaison
 apps/web/src/chat/          UI du chat, hook useChat, parseur SSE, citations et sources, journal d'événements
 ```
 
@@ -194,3 +199,4 @@ appuyées sur le code, questions et corrigé.
 | `docs/cours/jour-2-jeu-de-test.md` | Jour 2 · Le jeu de test : questions, runs, notation, lecture des échecs |
 | `docs/cours/jour-3-hybride.md` | Jour 3 · La recherche hybride : plein texte Postgres, identifiants, fusion RRF, comparaison des modes |
 | `docs/cours/jour-3-droits.md` | Jour 3 · Les droits d'accès : ACL par document, filtre dans la recherche, identité dans l'API |
+| `docs/cours/jour-4-evaluation.md` | Jour 4 · L'évaluation automatique : graders par code, juge LLM calibré, commande unique, historique |

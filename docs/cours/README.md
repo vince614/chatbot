@@ -14,6 +14,7 @@ dans l'ordre : chacun part de l'état du code laissé par le précédent.
 | 2 | 3 | [Le jeu de test](jour-2-jeu-de-test.md) | 20 questions typées, runs comparables, notation manuelle, erreur de recherche ou de génération | [approfondissement](approfondissement/jour-2-jeu-de-test.md) |
 | 3 | 1 | [La recherche hybride](jour-3-hybride.md) | Plein texte Postgres (`tsvector`, GIN), identifiants exacts, fusion RRF, `eval:compare` | [approfondissement](approfondissement/jour-3-hybride.md) |
 | 3 | 2 | [Les droits d'accès](jour-3-droits.md) | ACL par document, refus par défaut, filtre `&&` avant le classement, `X-User-Id` et 401, fuite par l'historique | [approfondissement](approfondissement/jour-3-droits.md) |
+| 4 | 1 | [L'évaluation automatique](jour-4-evaluation.md) | Graders par code, juge LLM et calibration, `npm run eval`, historique des scores | [approfondissement](approfondissement/jour-4-evaluation.md) |
 
 ## La trame commune
 
