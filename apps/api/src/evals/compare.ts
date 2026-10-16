@@ -21,7 +21,7 @@ async function main(): Promise<void> {
   console.log("Runs");
   runs.forEach(({ id, run }, i) => {
     console.log(
-      `  ${labels[i]}  ${id}  recherche ${modeOf(run).padEnd(7)}  ` +
+      `  ${labels[i]}  ${id}  RAG ${(run.config.rag?.mode ?? "always").padEnd(6)}  recherche ${modeOf(run).padEnd(7)}  ` +
         `utilisateur ${(run.config.utilisateur?.id ?? "—").padEnd(6)}  commit ${run.config.commit}`,
     );
   });
@@ -69,6 +69,16 @@ async function main(): Promise<void> {
     const subset = answerable.filter((q) => q.type === type);
     if (subset.length > 0) printTotals(type, subset, first);
   }
+
+  // Mode tool : le modèle a-t-il cherché ? « — » pour un run always, où la recherche est systématique.
+  console.log(`\nQuestions où le modèle a cherché (appels à search_documents)`);
+  const searchCells = runs.map(({ run }) => {
+    const counts = run.resultats.map((r) => r.recherches);
+    if (counts.some((n) => n === undefined)) return "—";
+    const total = counts.reduce((sum, n) => sum! + n!, 0);
+    return `${counts.filter((n) => n! > 0).length}/${counts.length} (${total})`;
+  });
+  console.log(`  ${"total".padEnd(15)} ${searchCells.map((cell) => cell.padStart(COL)).join("")}`);
 
   const skipped = questions.length - answerable.length;
   if (skipped > 0) console.log(`\n${skipped} question(s) sans réponse ignorée(s) : il n'y a pas de passage à trouver.`);

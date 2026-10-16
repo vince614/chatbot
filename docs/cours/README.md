@@ -16,6 +16,7 @@ dans l'ordre : chacun part de l'état du code laissé par le précédent.
 | 3 | 2 | [Les droits d'accès](jour-3-droits.md) | ACL par document, refus par défaut, filtre `&&` avant le classement, `X-User-Id` et 401, fuite par l'historique | [approfondissement](approfondissement/jour-3-droits.md) |
 | 4 | 1 | [L'évaluation automatique](jour-4-evaluation.md) | Graders par code, juge LLM et calibration, `npm run eval`, historique des scores | [approfondissement](approfondissement/jour-4-evaluation.md) |
 | 4 | 2 | [Le serveur MCP](jour-4-serveur-mcp.md) | Package `@chatbot/rag` partagé, serveur stdio, identité fixée au lancement, `search_documents` et `list_documents`, Inspector, `.mcp.json` | [approfondissement](approfondissement/jour-4-serveur-mcp.md) |
+| 4 | 3 | [L'API, client MCP](jour-4-client-mcp.md) | Un serveur MCP par utilisateur, outils MCP dans le registre, le modèle décide de chercher (`RAG_MODE`), résultats numérotés, panne du serveur, évaluation des deux modes | [approfondissement](approfondissement/jour-4-client-mcp.md) |
 
 ## La trame commune
 

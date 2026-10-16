@@ -34,7 +34,7 @@ function renderScoredReport(run: RunFile, scores: ScoresFile, questions: EvalQue
     `# Run ${scores.run}`,
     "",
     `Modèle ${config.llm.modele} (effort ${config.llm.effort}) · juge ${scores.juge.modele} (grille ${scores.juge.grille}) ·`,
-    `embeddings ${config.embeddings.modele} · recherche ${config.recherche?.mode ?? "vector"} · k = ${config.k} ·`,
+    `embeddings ${config.embeddings.modele} · RAG ${config.rag?.mode ?? "always"} · recherche ${config.recherche?.mode ?? "vector"} · k = ${config.k} ·`,
     `chunks de ${config.decoupage.tokens_par_chunk} tokens · utilisateur ${config.utilisateur?.id ?? "—"} · commit ${config.commit}`,
     "",
     "## Scores",

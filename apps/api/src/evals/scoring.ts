@@ -40,6 +40,8 @@ export interface HistoryLine {
     grille: string;
     embeddings: string;
     recherche: string;
+    /** always ou tool ; absent des lignes antérieures au client MCP (always). */
+    rag?: string;
     k: number;
     tokens_par_chunk: number;
     utilisateur: string;
@@ -120,6 +122,7 @@ export async function appendHistory(run: RunFile, scores: ScoresFile): Promise<v
       grille: scores.juge.grille,
       embeddings: `${config.embeddings.modele} (${config.embeddings.dimension})`,
       recherche: config.recherche?.mode ?? "vector",
+      rag: config.rag?.mode ?? "always",
       k: config.k,
       tokens_par_chunk: config.decoupage.tokens_par_chunk,
       utilisateur: config.utilisateur?.id ?? "—",

@@ -1,4 +1,4 @@
-// npm run eval -- --user <id> [--mode vector|lexical|hybrid] [--only q01,q13]
+// npm run eval -- --user <id> [--rag-mode always|tool] [--mode vector|lexical|hybrid] [--only q01,q13]
 // Toute l'évaluation en une commande : le run (questions → réponses), puis
 // les graders par code et le juge, puis le rapport et l'historique.
 import { ConfigError } from "../config.js";

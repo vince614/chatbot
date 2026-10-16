@@ -1,6 +1,6 @@
 # Jour 4 · Cours 2 — Le serveur MCP
 
-> [Sommaire](README.md) · Précédent : [Jour 4 · Cours 1 — L'évaluation automatique](jour-4-evaluation.md) · [Approfondissement : le code](approfondissement/jour-4-serveur-mcp.md)
+> [Sommaire](README.md) · Précédent : [Jour 4 · Cours 1 — L'évaluation automatique](jour-4-evaluation.md) · Suivant : [Jour 4 · Cours 3 — L'API, client MCP](jour-4-client-mcp.md) · [Approfondissement : le code](approfondissement/jour-4-serveur-mcp.md)
 
 > **Prérequis.** [La réponse sourcée](jour-2-recherche-reponse.md)
 > (`retrieve`) et [les droits d'accès](jour-3-droits.md) (groupes, ACL,
@@ -304,7 +304,7 @@ npm run --silent mcp </dev/null     # « MCP_USER_ID est obligatoire (alice, bru
 
 ### Pour aller plus loin (non fait, volontairement)
 
-Brancher ce serveur sur l'API et le `ToolRegistry` (prochaine étape),
+Brancher ce serveur sur l'API et le `ToolRegistry` ([cours suivant](jour-4-client-mcp.md)),
 transport HTTP avec authentification OAuth, resources (un document par
 URI), prompts, tests automatisés du serveur.
 

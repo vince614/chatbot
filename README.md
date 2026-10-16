@@ -18,13 +18,16 @@ Fonctionnalités en place :
   événements SSE, échanges avec le modèle ;
 - **ingestion RAG** : PDF → chunks → embeddings Voyage AI → Postgres +
   pgvector ;
-- **réponses sourcées** : à chaque message, le chat cherche les 5 passages
-  les plus proches, répond uniquement à partir d'eux (« Je ne sais pas »
-  sinon) et cite ses sources `[1]`, `[2]` ; l'interface affiche les sources
-  citées, dépliables, et les pastilles renvoient à l'extrait ;
+- **réponses sourcées** : le chat répond uniquement à partir des passages
+  retrouvés (« Je ne sais pas » sinon) et cite ses sources `[1]`, `[2]` ;
+  l'interface affiche les sources citées, dépliables, et les pastilles
+  renvoient à l'extrait ;
 - **serveur MCP** : `search_documents` et `list_documents`, utilisables par
   Claude Code ou tout client MCP, avec les droits d'un utilisateur fixé au
-  lancement.
+  lancement ;
+- **l'API, client MCP** : par défaut (`RAG_MODE=tool`), c'est le modèle qui
+  décide d'appeler `search_documents`, à travers un serveur MCP lancé pour
+  chaque utilisateur ; `RAG_MODE=always` cherche avant chaque message.
 
 ## Installation
 
@@ -45,6 +48,7 @@ npm run rag:sample-pdf && npm run ingest # un document de test, ingéré
 npm run dev          # api (http://localhost:3000) + web (http://localhost:5173) en parallèle
 npm run typecheck    # vérification des types dans chaque workspace (compile packages/rag au passage)
 npm run hello        # envoie une question en dur au LLM et affiche la réponse en flux
+npm run mcp:probe -- --user chloe ["question"] [--k 3]   # client MCP de l'API, sans modèle : outils vus, une recherche
 ```
 
 Le front relaie tout appel à `/api/*` vers le backend (proxy Vite).
@@ -66,13 +70,13 @@ d'un jeton vérifié par le serveur.
 
 | Événement | Données |
 | --- | --- |
-| `sources` | `{ sources: [{ index, fileName, pageStart, pageEnd, score, excerpt }] }` : les passages retrouvés, avant le premier `delta` ; `index` est le numéro cité `[n]` |
+| `sources` | `{ sources: [{ index, fileName, pageStart, pageEnd, score, excerpt }] }` : les passages retrouvés ; `index` est le numéro cité `[n]`. Mode `always` : une fois, avant le premier `delta`. Mode `tool` : après chaque recherche du modèle, avec toutes les sources de la requête (le client remplace sa liste) |
 | `delta` | `{ text }` : un fragment de la réponse |
 | `tool_call` | `{ name, input }` : le modèle demande un outil |
 | `tool_result` | `{ name, ok }` : l'outil a été exécuté |
 | `debug` | seulement si `debug: true` : à chaque tour, la requête envoyée au modèle (prompt système, historique, outils) puis sa réponse |
 | `done` | fin normale |
-| `error` | `{ message }` : erreur, recherche documentaire indisponible, ou plafond de 5 tours d'outils atteint |
+| `error` | `{ message }` : erreur, recherche documentaire indisponible, ou plafond de 5 tours d'outils atteint. Mode `tool` : envoyé à la place de `done`, après la réponse du modèle, si une recherche a échoué |
 
 ```bash
 curl -N -X POST http://localhost:3000/api/chat \
@@ -84,8 +88,9 @@ curl -N -X POST http://localhost:3000/api/chat \
 
 Le code commun vit dans `packages/rag/` (`@chatbot/rag`), importé par l'API
 et par le serveur MCP. Les scripts d'ingestion restent dans
-`apps/api/src/rag/scripts/`, séparés du serveur ; le prompt (`buildRagPrompt`)
-reste dans `apps/api/src/rag/prompt.ts`.
+`apps/api/src/rag/scripts/`, séparés du serveur ; les prompts
+(`buildRagPrompt`, `buildToolSystemPrompt`) restent dans
+`apps/api/src/rag/prompt.ts`.
 
 ```bash
 npm run db:up                             # Postgres 17 + pgvector (docker compose, port 5433)
@@ -110,11 +115,17 @@ extraits des documents).
 npm run eval:run -- --user chloe [--mode hybrid] [--only q01,q13]   # rejoue les questions → <date>.json, <date>.md, <date>.notes.json
 npm run eval:score -- <date>              # additionne les notes saisies à la main, détail par type, échecs
 npm run eval:compare -- <A> <B> [<C>]     # rang du bon passage dans chaque run, calculé depuis les pages attendues
-npm run eval -- --user chloe [--mode hybrid]   # run + graders (code et juge) → <date>.scores.json, rapport <date>.md, evals/history.jsonl
+npm run eval -- --user chloe [--mode hybrid] [--rag-mode always|tool]   # run + graders (code et juge) → <date>.scores.json, rapport <date>.md, evals/history.jsonl
 npm run eval:grade -- <date>              # graders par code seuls, sur un run existant (sans modèle)
 npm run eval:calibrate -- <date> [--repeat 2]  # accord du juge avec les notes manuelles, stabilité
 npm run eval:history                      # évolution des scores, un run par ligne
 ```
+
+En mode `tool`, chaque résultat note combien de fois le modèle a appelé
+`search_documents` et avec quelles questions (`recherches`,
+`questions_recherche`) ; le mode apparaît dans les rapports, l'historique
+(colonne `rag`) et `eval:compare`. Les deux modes se lancent l'un après
+l'autre, jamais en parallèle (quota Voyage).
 
 Le pipeline : extraction page par page (pdf.js), nettoyage (en-têtes et pieds
 répétés, césures, ligatures), découpage en chunks d'environ 500 tokens avec
@@ -158,6 +169,23 @@ npx @modelcontextprotocol/inspector --cli --config .mcp.json --server chatbot-ra
 puis `/mcp` pour voir son état. En stdio, rien ne doit être écrit sur
 stdout en dehors du protocole : d'où `--silent`, et les logs sur stderr.
 
+### L'API, client MCP
+
+En `RAG_MODE=tool` (par défaut), `/chat` ne cherche plus avant le modèle :
+il lui donne les outils maison et ceux du serveur MCP de l'utilisateur,
+préfixés `mcp__rag__` (`apps/api/src/mcp/`). L'API lance **un serveur MCP
+par utilisateur** (sous-processus stdio, `MCP_USER_ID` fixé au lancement) :
+un serveur partagé donnerait à chacun les droits du premier. Le serveur est
+démarré au premier message, réutilisé, puis fermé après 5 minutes
+d'inactivité.
+
+Si le serveur MCP tombe ou ne démarre pas, les outils maison restent
+utilisables ; une recherche répond « indisponible » au modèle, l'interface
+reçoit un `error`, et le serveur n'est pas relancé pendant 30 s. À l'arrêt
+de l'API (Ctrl+C, SIGTERM), tous les serveurs MCP sont fermés. Les logs
+donnent l'outil, l'utilisateur et la durée, jamais la question ni les
+extraits.
+
 Pour arrêter la base : `docker compose down` (les données restent dans le
 volume), ou `docker compose down -v` pour tout effacer.
 
@@ -182,6 +210,7 @@ le chat renvoie alors une erreur « recherche indisponible ».
 | `EMBEDDING_MODEL` | Modèle d'embeddings | `voyage-3.5` |
 | `EMBEDDING_DIMENSION` | Dimension des vecteurs (256, 512, 1024 ou 2048). Figée dans la colonne SQL à la migration. | `1024` |
 | `RAG_SEARCH_MODE` | Recherche par défaut : `vector`, `lexical` ou `hybrid`. Optionnelle (`vector` si absente). | `vector` |
+| `RAG_MODE` | `tool` : le modèle décide d'appeler `search_documents` (serveur MCP) ; `always` : recherche avant chaque message. Optionnelle (`tool` si absente). | `tool` |
 | `MCP_USER_ID` | Utilisateur du serveur MCP (`data/users.json`). Passée par le client MCP (`.mcp.json`, Inspector), pas dans `.env`. | `chloe` |
 | `EVAL_JUDGE_MODEL` | Modèle juge de l'exactitude (`npm run eval`), distinct de `LLM_MODEL` et acceptant `temperature: 0`. Optionnelle. | `claude-haiku-4-5` |
 
@@ -205,11 +234,14 @@ packages/rag/                @chatbot/rag, partagé par l'API et le serveur MCP
 └─ migrations/               fichiers SQL
 apps/api/src/
 ├─ server.ts, config.ts      démarrage Fastify, configuration, chemins (.env, data/)
-├─ routes/chat.ts            POST /api/chat : identité, recherche, sources, boucle modèle ↔ outils, flux SSE
+├─ routes/chat.ts            POST /api/chat : identité, mode always ou tool, sources, flux SSE
+├─ chat/conversation.ts      boucle modèle ↔ outils (partagée par /chat et l'évaluation)
+├─ chat/search-results.ts    résultats de search_documents → extraits numérotés, sources
+├─ mcp/                      client MCP : un serveur par utilisateur (pool), outils MCP → registre, mcp:probe
 ├─ auth/fake-identity.ts     X-User-Id, remplaçant d'authentification
 ├─ llm/                      LlmClient + fabrique ; seul anthropic.ts importe le SDK
-├─ tools/                    registre d'outils (validation Zod, délai, erreurs → résultat)
-├─ rag/prompt.ts             prompt système RAG, buildRagPrompt, extractCitations (purs)
+├─ tools/                    registre d'outils (Zod ou JSON Schema, délai par outil, erreurs → résultat)
+├─ rag/prompt.ts             prompts système (always, tool), buildRagPrompt, extractCitations (purs)
 ├─ rag/scripts/              migrate, preview, embed-check, ingest, search, ask, sample-pdf
 └─ evals/                    run, graders (code + juge), scores, rapport, historique, calibration, comparaison
 apps/mcp-server/src/
@@ -240,3 +272,4 @@ appuyées sur le code, questions et corrigé.
 | `docs/cours/jour-3-droits.md` | Jour 3 · Les droits d'accès : ACL par document, filtre dans la recherche, identité dans l'API |
 | `docs/cours/jour-4-evaluation.md` | Jour 4 · L'évaluation automatique : graders par code, juge LLM calibré, commande unique, historique |
 | `docs/cours/jour-4-serveur-mcp.md` | Jour 4 · Le serveur MCP : package partagé, stdio, identité fixée au lancement, outils, Inspector, `.mcp.json` |
+| `docs/cours/jour-4-client-mcp.md` | Jour 4 · L'API, client MCP : un serveur par utilisateur, le modèle décide de chercher, panne du serveur, comparaison des deux modes |

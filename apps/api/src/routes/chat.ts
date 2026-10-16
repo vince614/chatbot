@@ -4,26 +4,29 @@ import type { FastifyBaseLogger, FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
 import { identifyUser } from "../auth/fake-identity.js";
-import type { ChatMessage, ContentPart, LlmClient, LlmEvent } from "../llm/index.js";
+import { type ConversationOptions, MAX_TOOL_TURNS, runConversation } from "../chat/conversation.js";
+import {
+  createSearchResults,
+  SEARCH_TOOL_NAME,
+  TOOL_SYSTEM_PROMPT,
+  toSourceSummary,
+} from "../chat/search-results.js";
+import type { RagMode } from "../config.js";
+import type { ChatMessage, LlmClient } from "../llm/index.js";
+import { loadMcpToolsOrFallback, type McpPool } from "../mcp/index.js";
 import { buildRagPrompt } from "../rag/prompt.js";
 import { openSseStream, type SourceSummary } from "../sse.js";
-import type { ToolRegistry } from "../tools/index.js";
+import { type AnyTool, createToolRegistry } from "../tools/index.js";
 
 const MAX_MESSAGES = 50;
 const MAX_CONTENT_LENGTH = 8_000;
 
-/** Nombre maximal d'allers-retours modèle → outils → modèle pour une requête. */
-const MAX_TOOL_TURNS = 5;
-/** Délai maximal d'exécution d'un outil. */
-const TOOL_TIMEOUT_MS = 5_000;
 /**
  * Délai maximal de la recherche documentaire. Le client d'embeddings réessaie
  * longtemps sur un quota dépassé (pensé pour l'ingestion) : un utilisateur qui
  * attend une réponse ne doit pas patienter deux minutes.
  */
 const RETRIEVAL_TIMEOUT_MS = 10_000;
-/** Longueur de l'extrait de chaque source envoyé au navigateur. */
-const EXCERPT_LENGTH = 200;
 
 // Le client n'envoie que du texte : les échanges d'outils ne vivent que le temps
 // d'une requête, côté serveur. Simplification voulue (voir apps/web/src/chat/useChat.ts).
@@ -55,6 +58,9 @@ const TOO_MANY_TURNS_MESSAGE =
   "Le modèle a enchaîné trop d'appels d'outils sans conclure. Réessaie en reformulant.";
 const RETRIEVAL_ERROR_MESSAGE =
   "La recherche dans les documents est indisponible pour le moment : impossible de répondre avec des sources. Réessaie dans un instant.";
+/** Mode tool : une recherche demandée par le modèle a échoué. Le reste du chat fonctionne. */
+const SEARCH_FAILED_MESSAGE =
+  "La recherche dans les documents a échoué : cette réponse ne s'appuie sur aucun document. Les autres fonctions restent disponibles ; réessaie dans un instant.";
 
 /** Échec de la recherche documentaire : distinct d'un échec du modèle, pour un message dédié. */
 class RetrievalError extends Error {
@@ -63,13 +69,22 @@ class RetrievalError extends Error {
 
 export interface ChatRoutesOptions {
   llm: LlmClient;
-  tools: ToolRegistry;
+  /** Les outils maison, les mêmes pour tous : date, calcul. */
+  localTools: AnyTool[];
+  /** always : recherche à chaque message ; tool : le modèle décide (voir RAG_MODE). */
+  ragMode: RagMode;
+  /** Mode always : la recherche, appelée directement. */
   retrieve: Retrieve;
+  /** Mode tool : les serveurs MCP des utilisateurs, qui portent la recherche. */
+  mcp: McpPool;
   /** Annuaire des utilisateurs (data/users.json), par identifiant. */
   users: ReadonlyMap<string, User>;
 }
 
-export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { llm, tools, retrieve, users }) => {
+export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (
+  app,
+  { llm, localTools, ragMode, retrieve, mcp, users },
+) => {
   app.post("/chat", async (request, reply) => {
     // 0. Qui demande ? Avant tout le reste : sans identité, ni validation du
     //    corps, ni recherche, ni appel au modèle. (Remplaçant d'authentification :
@@ -103,31 +118,76 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (app, { l
     const sse = openSseStream(reply.raw);
 
     try {
-      // 1. Recherche à partir du dernier message utilisateur (garanti par le schéma).
       const messages = parsed.data.messages;
-      const question = messages.at(-1)!.content;
-      const chunks = await searchDocuments(retrieve, question, user, controller.signal, request.log);
-
-      // 2. Les sources partent avant le premier delta : le navigateur peut les
-      //    rattacher à la réponse dès qu'elle commence.
-      sse.send({ event: "sources", data: { sources: toSourceSummaries(chunks) } });
-
-      // 3. Le dernier message devient « documents + question ». Les messages
-      //    précédents restent tels quels, en texte seul.
-      const prompt = buildRagPrompt(question, chunks);
-      const history: ChatMessage[] = [...messages.slice(0, -1), { role: "user", content: prompt.user }];
-
-      const completed = await runConversation({
+      // Ce que les deux modes partagent : la boucle d'outils, ses événements, ses logs.
+      const base = {
         llm,
-        tools,
-        system: prompt.system,
-        messages: history,
-        debug: parsed.data.debug ?? false,
-        signal: controller.signal,
-        sse,
+        userId: user.id,
+        emit: sse.send,
         log: request.log,
-      });
-      if (completed) {
+        signal: controller.signal,
+        debug: parsed.data.debug ?? false,
+      } satisfies Partial<ConversationOptions>;
+
+      let completed: boolean;
+      // Mode tool : vrai si une recherche demandée par le modèle a échoué.
+      let searchFailed = false;
+      if (ragMode === "always") {
+        // 1. Recherche à partir du dernier message utilisateur (garanti par le schéma).
+        const question = messages.at(-1)!.content;
+        const chunks = await searchDocuments(retrieve, question, user, controller.signal, request.log);
+
+        // 2. Les sources partent avant le premier delta : le navigateur peut les
+        //    rattacher à la réponse dès qu'elle commence.
+        sse.send({ event: "sources", data: { sources: toSourceSummaries(chunks) } });
+
+        // 3. Le dernier message devient « documents + question ». Les messages
+        //    précédents restent tels quels, en texte seul.
+        const prompt = buildRagPrompt(question, chunks);
+        const history: ChatMessage[] = [...messages.slice(0, -1), { role: "user", content: prompt.user }];
+        ({ completed } = await runConversation({
+          ...base,
+          tools: createToolRegistry(localTools),
+          system: prompt.system,
+          messages: history,
+        }));
+      } else {
+        // 1. Les outils de cette requête : les outils maison, plus ceux du
+        //    serveur MCP de cet utilisateur (démarré au besoin). Le registre
+        //    est propre à la requête, car les outils MCP dépendent de l'utilisateur.
+        //    Si son serveur ne répond pas, les outils maison restent, et les
+        //    outils MCP sont déclarés quand même mais répondent « indisponible ».
+        const results = createSearchResults();
+        const mcpTools = await loadMcpToolsOrFallback(mcp, user.id, { formatResult: results.format });
+        if (!mcpTools.available) request.log.warn({ userId: user.id }, "outils MCP indisponibles pour cette requête");
+        const tools = createToolRegistry([...localTools, ...mcpTools.tools]);
+
+        // 2. La conversation telle quelle : c'est le modèle qui décide de
+        //    chercher. Après chaque recherche, les sources de toute la requête
+        //    partent au navigateur (il remplace la liste précédente).
+        ({ completed } = await runConversation({
+          ...base,
+          tools,
+          system: TOOL_SYSTEM_PROMPT,
+          messages,
+          onToolResult: ({ name }, result) => {
+            if (name !== SEARCH_TOOL_NAME) return;
+            if (result.ok) {
+              sse.send({ event: "sources", data: { sources: results.sources() } });
+            } else if (!isInvalidArguments(result.content)) {
+              // Le modèle a lu l'échec dans le résultat d'outil et va le dire
+              // à sa façon ; l'interface, elle, recevra une erreur explicite
+              // à la fin. Pas tout de suite : le navigateur arrête de lire le
+              // flux au premier "error", et perdrait l'explication du modèle.
+              searchFailed = true;
+            }
+          },
+        }));
+      }
+
+      if (completed && searchFailed) {
+        sse.send({ event: "error", data: { message: SEARCH_FAILED_MESSAGE } });
+      } else if (completed) {
         sse.send({ event: "done", data: {} });
       } else {
         request.log.warn({ maxTurns: MAX_TOOL_TURNS }, "trop de tours d'outils");
@@ -188,110 +248,16 @@ async function searchDocuments(
 
 /** Ce que le navigateur reçoit des passages : numéro, fichier, pages, score, début du texte. */
 function toSourceSummaries(chunks: RetrievedChunk[]): SourceSummary[] {
-  return chunks.map((chunk, i) => {
-    const text = chunk.content.replace(/\s+/g, " ").trim();
-    return {
-      index: i + 1,
-      fileName: chunk.fileName,
-      pageStart: chunk.pageStart,
-      pageEnd: chunk.pageEnd,
-      score: Number(chunk.score.toFixed(3)),
-      excerpt: text.length > EXCERPT_LENGTH ? `${text.slice(0, EXCERPT_LENGTH)}…` : text,
-    };
-  });
+  return chunks.map((chunk, i) => toSourceSummary({ ...chunk, index: i + 1 }));
 }
-
-interface ConversationContext {
-  llm: LlmClient;
-  tools: ToolRegistry;
-  /** Prompt système : celui du RAG, construit par buildRagPrompt. */
-  system: string;
-  messages: ChatMessage[];
-  debug: boolean;
-  signal: AbortSignal;
-  sse: ReturnType<typeof openSseStream>;
-  log: FastifyBaseLogger;
-}
-
-type ToolCall = Extract<LlmEvent, { type: "tool_call" }>;
 
 /**
- * La boucle d'outils. Un "tour" = un appel au modèle. Si le modèle demande des
- * outils, on les exécute, on ajoute les résultats à l'historique et on repart.
- * Renvoie true si le modèle a conclu, false si le plafond de tours est atteint.
+ * Arguments refusés par le serveur MCP (erreur JSON-RPC -32602, que le SDK
+ * écrit « MCP error -32602: … ») : c'est le modèle qui s'est trompé, il peut
+ * corriger au tour suivant. Ce n'est pas une recherche indisponible.
  */
-async function runConversation({ llm, tools, system, messages, debug, signal, sse, log }: ConversationContext) {
-  const history: ChatMessage[] = [...messages];
-  const toolDefinitions = tools.list();
-
-  for (let turn = 1; turn <= MAX_TOOL_TURNS; turn += 1) {
-    let text = "";
-    const toolCalls: ToolCall[] = [];
-
-    const params = { system, messages: history, tools: toolDefinitions };
-    if (debug) {
-      // Copie de l'historique : il sera muté après l'appel.
-      sse.send({
-        event: "debug",
-        data: { kind: "model_request", turn, payload: { ...params, messages: structuredClone(history) } },
-      });
-    }
-
-    const stream = llm.streamChat({ ...params, signal });
-    for await (const event of stream) {
-      if (event.type === "text") {
-        text += event.text;
-        sse.send({ event: "delta", data: { text: event.text } });
-      } else {
-        toolCalls.push(event);
-      }
-    }
-
-    if (debug) {
-      sse.send({ event: "debug", data: { kind: "model_response", turn, payload: { text, toolCalls } } });
-    }
-
-    // Pas d'appel d'outil : la réponse est finale.
-    if (toolCalls.length === 0) return true;
-
-    log.info({ turn, toolCalls: toolCalls.length }, "appels d'outils demandés");
-
-    // Le message assistant est renvoyé tel quel au tour suivant, texte et appels compris.
-    // Le fournisseur refuse un bloc texte vide : on ne l'ajoute que s'il y a du texte.
-    const assistantParts: ContentPart[] = toolCalls.map((call) => ({
-      type: "tool_call",
-      id: call.id,
-      name: call.name,
-      input: call.input,
-    }));
-    if (text.trim() !== "") assistantParts.unshift({ type: "text", text });
-    history.push({ role: "assistant", content: assistantParts });
-
-    // Les outils d'un même tour sont indépendants : exécution en parallèle.
-    const results = await Promise.all(
-      toolCalls.map((call) => executeToolCall(call, { tools, signal, sse, log })),
-    );
-    history.push({ role: "user", content: results });
-  }
-
-  return false;
-}
-
-async function executeToolCall(
-  call: ToolCall,
-  { tools, signal, sse, log }: Pick<ConversationContext, "tools" | "signal" | "sse" | "log">,
-): Promise<ContentPart> {
-  sse.send({ event: "tool_call", data: { name: call.name, input: call.input } });
-
-  const startedAt = performance.now();
-  const result = await tools.execute(call.name, call.input, { signal, timeoutMs: TOOL_TIMEOUT_MS });
-  const durationMs = Math.round(performance.now() - startedAt);
-
-  // Nom et durée seulement : ni les arguments ni le résultat.
-  log.info({ tool: call.name, durationMs, ok: result.ok }, "outil exécuté");
-  sse.send({ event: "tool_result", data: { name: call.name, ok: result.ok } });
-
-  return { type: "tool_result", toolCallId: call.id, content: result.content, isError: !result.ok };
+function isInvalidArguments(content: string): boolean {
+  return content.startsWith("MCP error -32602");
 }
 
 function describeError(error: unknown): string {

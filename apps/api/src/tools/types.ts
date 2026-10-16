@@ -13,7 +13,27 @@ export interface Tool<S extends z.ZodType = z.ZodType> {
   schema: S;
   /** Exécute l'outil. Le résultat sera sérialisé en JSON pour le modèle. */
   execute(input: z.infer<S>, context: ToolContext): Promise<unknown>;
+  /** Délai propre à l'outil, en millisecondes ; sinon, celui de l'appelant. */
+  timeoutMs?: number;
 }
+
+/**
+ * Un outil défini ailleurs (un serveur MCP) : son schéma arrive déjà en JSON
+ * Schema et c'est le serveur qui valide les arguments. Le registre ne fait
+ * que transmettre.
+ */
+export interface ExternalTool {
+  name: string;
+  description: string;
+  /** JSON Schema des arguments, transmis tel quel au modèle. */
+  inputSchema: Record<string, unknown>;
+  /** Exécute l'outil. Le résultat est déjà sous sa forme finale : texte et succès ou échec. */
+  execute(input: unknown, context: ToolContext): Promise<ToolExecutionResult>;
+  timeoutMs?: number;
+}
+
+/** Ce que le registre accepte : un outil maison (Zod) ou un outil externe (JSON Schema). */
+export type AnyTool = Tool | ExternalTool;
 
 export interface ToolContext {
   /** Déclenché si le client se déconnecte ou si le délai est dépassé. */

@@ -15,6 +15,7 @@
     "search": "tsx --conditions=development src/rag/scripts/search.ts",
     "rag:sample-pdf": "tsx --conditions=development src/rag/scripts/make-sample-pdf.ts",
     "ask": "tsx --conditions=development src/rag/scripts/ask.ts",
+    "mcp:probe": "tsx --conditions=development src/mcp/probe.ts",
     "eval:run": "tsx --conditions=development src/evals/run.ts",
     "eval:score": "tsx --conditions=development src/evals/score.ts",
     "eval:compare": "tsx --conditions=development src/evals/compare.ts",
@@ -26,6 +27,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
     "@chatbot/rag": "0.1.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "fastify": "^5.6.0",
     "zod": "^4.6.6"
   },

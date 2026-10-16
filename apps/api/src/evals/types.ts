@@ -47,6 +47,11 @@ export interface RunConfig {
    * antérieurs aux droits d'accès : tous les documents étaient visibles.
    */
   utilisateur?: { id: string; groupes: string[] };
+  /**
+   * Comment le modèle accède aux documents (RAG_MODE). Absent dans les runs
+   * antérieurs au client MCP : ils cherchaient tous systématiquement (always).
+   */
+  rag?: { mode: "always" | "tool" };
   /** Commit Git du code, avec « -modifie » si des fichiers n'étaient pas commités. */
   commit: string;
   /** Empreintes : un prompt ou des questions modifiés rendent deux runs incomparables. */
@@ -66,6 +71,12 @@ export interface RunResult {
   chunks_recuperes: (Source & { rang: number; score: number })[];
   duree_ms: number;
   erreur: string | null;
+  /**
+   * Mode tool seulement : combien de fois le modèle a appelé search_documents
+   * (0 = il a répondu sans chercher), et les questions qu'il a formulées.
+   */
+  recherches?: number;
+  questions_recherche?: string[];
 }
 
 export interface RunFile {

@@ -45,7 +45,7 @@ export function renderReport(runId: string, run: RunFile, questions: EvalQuestio
     "",
     `Modèle ${config.llm.modele} (effort ${config.llm.effort}) · embeddings ${config.embeddings.modele} ·`,
     `chunks de ${config.decoupage.tokens_par_chunk} tokens (recouvrement ${config.decoupage.recouvrement * 100} %) ·`,
-    `recherche ${config.recherche?.mode ?? "vector"} · utilisateur ${config.utilisateur?.id ?? "(avant les droits)"} · ` +
+    `RAG ${config.rag?.mode ?? "always"} · recherche ${config.recherche?.mode ?? "vector"} · utilisateur ${config.utilisateur?.id ?? "(avant les droits)"} · ` +
       `k = ${config.k} · commit ${config.commit}`,
     "",
     "## Comment noter",
@@ -70,6 +70,14 @@ export function renderQuestion(result: RunResult, question: EvalQuestion | undef
   const retrieved = result.chunks_recuperes
     .map((c) => `${c.rang}. ${c.fichier} ${formatPages(c.pages)} (${c.score.toFixed(3)})`)
     .join("<br>");
+  // Mode tool : combien de recherches le modèle a lancées, et lesquelles.
+  const searches =
+    result.recherches === undefined
+      ? []
+      : [
+          `Recherches : **${result.recherches}**${result.questions_recherche?.length ? ` — ${result.questions_recherche.map((q) => `« ${q} »`).join(" ; ")}` : " (réponse sans recherche)"}`,
+          "",
+        ];
   const cited =
     result.sources_citees.length > 0
       ? result.sources_citees.map((s) => `[${s.index}] ${s.fichier} ${formatPages(s.pages)}`).join("<br>")
@@ -82,6 +90,7 @@ export function renderQuestion(result: RunResult, question: EvalQuestion | undef
     "",
     `> ${result.question}`,
     "",
+    ...searches,
     "| | Attendu | Obtenu |",
     "| --- | --- | --- |",
     `| **Réponse** | ${cell(question?.reponse_attendue ?? "?")} | ${cell(result.erreur ? `**ERREUR** : ${result.erreur}` : (result.reponse_obtenue ?? ""))} |`,

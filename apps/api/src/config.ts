@@ -1,11 +1,11 @@
 import { fileURLToPath } from "node:url";
 
 import * as rag from "@chatbot/rag/config";
-import { loadDotEnv as loadEnvFile, requireEnv } from "@chatbot/rag/env";
+import { ConfigError, loadDotEnv as loadEnvFile, requireEnv } from "@chatbot/rag/env";
 
 import type { LlmClientOptions } from "./llm/index.js";
 
-export { ConfigError } from "@chatbot/rag/env";
+export { ConfigError };
 
 export interface Config {
   port: number;
@@ -48,6 +48,24 @@ export const ACL_FILE = `${PDF_DIR}acl.json`;
 
 /** L'annuaire des utilisateurs fictifs (voir @chatbot/rag/users). */
 export const USERS_FILE = fileURLToPath(new URL("../data/users.json", import.meta.url));
+
+/** Comment /chat utilise la recherche documentaire (RAG_MODE). */
+export const RAG_MODES = ["always", "tool"] as const;
+export type RagMode = (typeof RAG_MODES)[number];
+
+/**
+ * RAG_MODE, optionnel : « tool » (par défaut) donne la recherche au modèle
+ * comme un outil, qu'il appelle quand il le juge utile ; « always » cherche
+ * à chaque message avant d'appeler le modèle (l'ancien comportement).
+ */
+export function loadRagMode(): RagMode {
+  loadDotEnv();
+  const raw = process.env["RAG_MODE"]?.trim() || "tool";
+  if (!(RAG_MODES as readonly string[]).includes(raw)) {
+    throw new ConfigError(`RAG_MODE doit valoir ${RAG_MODES.join(", ")} (reçu : "${raw}").`);
+  }
+  return raw as RagMode;
+}
 
 /*
  * La configuration du RAG vit dans @chatbot/rag ; l'API charge d'abord son
