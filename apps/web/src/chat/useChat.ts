@@ -1,5 +1,7 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { type Autosave, createAutosave } from "../storage/autosave";
+import type { Conversation } from "../storage/types";
 import { streamChat } from "./api";
 import type { ChatMessage, ChatStatus, LogEntry, UiMessage } from "./types";
 
@@ -16,27 +18,59 @@ export interface UseChatResult {
   /** Journal des événements, du plus ancien au plus récent. */
   log: LogEntry[];
   clearLog: () => void;
-  /** Annule le flux en cours puis vide les messages et l'erreur (le journal est conservé). */
-  reset: () => void;
+  /**
+   * Avant de supprimer la conversation courante ou de tout effacer : arrête
+   * le flux et oublie la sauvegarde en attente, sinon elle réécrirait ce
+   * qu'on vient de supprimer.
+   */
+  discardPending: () => Promise<void>;
+  /** Attend que la sauvegarde en attente soit écrite (avant de rouvrir une conversation depuis le disque). */
+  flushPending: () => Promise<void>;
 }
 
 /** Au-delà, les plus anciennes lignes du journal sont oubliées. */
 const MAX_LOG_ENTRIES = 300;
 /** Garde-fou sur le texte libre d'une ligne ; les données structurées ne sont pas tronquées. */
 const MAX_LOG_MESSAGE = 4_000;
+/** Pendant le streaming : au plus une sauvegarde chiffrée toutes les 2 s, pas une par delta. */
+const SAVE_DELAY_MS = 2_000;
 
 /**
- * Porte tout l'état du chat. L'historique vit uniquement dans l'état React :
- * recharger la page repart de zéro, c'est voulu.
+ * Porte tout l'état du chat de la conversation `conversation`, qu'il charge
+ * quand elle change et qu'il sauvegarde (chiffrée, dans ce navigateur) :
+ * différé pendant le streaming, tout de suite quand la réponse se termine.
+ * Le serveur, lui, ne reçoit que les messages de cette conversation, le temps
+ * de la requête.
  * `userId` est l'identité envoyée au serveur ; vide tant qu'aucun utilisateur n'est choisi.
  */
-export function useChat(userId: string): UseChatResult {
+export function useChat(
+  userId: string,
+  conversation: Conversation | null,
+  onSaved: (saved: Conversation) => void,
+): UseChatResult {
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [status, setStatus] = useState<ChatStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
   const nextLogId = useRef(1);
+  // Les messages et la conversation aussi en ref : la sauvegarde a besoin de
+  // leur dernière valeur à l'instant où elle est demandée, sans attendre un rendu.
+  const messagesRef = useRef<UiMessage[]>([]);
+  const conversationRef = useRef<Conversation | null>(null);
+  const onSavedRef = useRef(onSaved);
+  const autosaveRef = useRef<Autosave | null>(null);
+
+  useEffect(() => {
+    onSavedRef.current = onSaved;
+  });
+
+  /** Met à jour les messages : la ref tout de suite, l'état pour l'affichage. */
+  const commit = useCallback((next: UiMessage[] | ((prev: UiMessage[]) => UiMessage[])) => {
+    const value = typeof next === "function" ? next(messagesRef.current) : next;
+    messagesRef.current = value;
+    setMessages(value);
+  }, []);
 
   const append = useCallback((kind: LogEntry["kind"], message: string, data?: unknown) => {
     const entry: LogEntry = {
@@ -51,13 +85,75 @@ export function useChat(userId: string): UseChatResult {
 
   const clearLog = useCallback(() => setLog([]), []);
 
+  autosaveRef.current ??= createAutosave({
+    delayMs: SAVE_DELAY_MS,
+    onSaved: (saved, durationMs) => {
+      if (conversationRef.current?.id === saved.id) conversationRef.current = saved;
+      append("state", `sauvegarde chiffrée : ${saved.messages.length} message(s) en ${durationMs} ms`);
+      onSavedRef.current(saved);
+    },
+    onError: (err) => append("state", `sauvegarde impossible : ${err instanceof Error ? err.message : String(err)}`),
+  });
+
+  /** Demande une sauvegarde différée de la conversation courante, avec ses messages actuels. */
+  const scheduleSave = useCallback(() => {
+    const current = conversationRef.current;
+    if (current) autosaveRef.current?.schedule({ conversation: current, messages: messagesRef.current });
+  }, []);
+
+  // Changement de conversation (sélection, nouvelle, autre utilisateur) : on
+  // quitte la précédente (son flux est arrêté, ce qu'elle a de non sauvegardé
+  // est écrit), puis on affiche celle-ci. Changer d'utilisateur passe aussi
+  // par ici : l'historique de l'utilisateur précédent, et ses sources, ne
+  // restent ni à l'écran ni dans ce qui part au serveur (fuite par l'historique).
+  const conversationId = conversation?.id ?? null;
+  useEffect(() => {
+    const autosave = autosaveRef.current;
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+      scheduleSave();
+    }
+    void autosave?.flush();
+    conversationRef.current = conversation;
+    commit(conversation?.messages ?? []);
+    setStatus("idle");
+    setError(null);
+    if (conversation) {
+      append("state", `conversation ouverte : ${conversation.messages.length} message(s)${conversation.messages.length ? " (déchiffrée)" : ", neuve"}`);
+    }
+    // Seul l'identifiant compte : la même conversation réenregistrée (titre,
+    // date) ne doit pas recharger ses messages pendant qu'on l'écrit.
+  }, [conversationId]);
+
+  // Onglet masqué, fermé ou rechargé : on écrit tout de suite ce qui attend,
+  // sans attendre les 2 s du délai. « hidden » arrive aussi avant une
+  // fermeture, et laisse plus de chances que pagehide de finir l'écriture.
+  useEffect(() => {
+    const onHidden = () => {
+      if (document.visibilityState !== "hidden") return;
+      if (abortRef.current) scheduleSave();
+      void autosaveRef.current?.flush();
+    };
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      document.removeEventListener("visibilitychange", onHidden);
+      // Démontage : le flux en cours n'a plus personne à qui parler.
+      abortRef.current?.abort();
+      abortRef.current = null;
+    };
+  }, []);
+
   const run = useCallback(async (history: UiMessage[]) => {
-    if (!userId) return;
+    // Garde-fou : jamais l'historique d'une conversation au nom d'un autre utilisateur.
+    if (!userId || conversationRef.current?.userId !== userId) return;
     const controller = new AbortController();
     abortRef.current = controller;
 
-    // Bulle assistant vide, remplie au fil des deltas.
-    setMessages([...history, { role: "assistant", content: "" }]);
+    // Bulle assistant vide, remplie au fil des deltas. Le message utilisateur
+    // est sauvegardé dès maintenant (différé), même si la réponse échoue.
+    commit([...history, { role: "assistant", content: "" }]);
+    scheduleSave();
     setStatus("streaming");
     setError(null);
     append("state", "status → streaming");
@@ -65,7 +161,9 @@ export function useChat(userId: string): UseChatResult {
     // Un flux annulé (Stop, changement d'utilisateur) ne doit plus toucher aux messages,
     // même si des événements déjà lus restent à traiter.
     const updateAssistant = (update: (message: UiMessage) => UiMessage) => {
-      if (!controller.signal.aborted) setMessages((prev) => updateLastAssistant(prev, update));
+      if (controller.signal.aborted) return;
+      commit((prev) => updateLastAssistant(prev, update));
+      scheduleSave();
     };
 
     const wire = toWireHistory(history);
@@ -92,7 +190,7 @@ export function useChat(userId: string): UseChatResult {
     } catch (err) {
       // Flux remplacé par reset() : l'état appartient déjà à la conversation suivante.
       if (abortRef.current !== controller) return;
-      setMessages(dropEmptyTrailingAssistant);
+      commit(dropEmptyTrailingAssistant);
       if (controller.signal.aborted) {
         // Arrêt volontaire : pas une erreur.
         setStatus("idle");
@@ -104,18 +202,27 @@ export function useChat(userId: string): UseChatResult {
         append("state", `status → error : ${message}`);
       }
     } finally {
-      if (abortRef.current === controller) abortRef.current = null;
+      // Réponse terminée, arrêtée ou en erreur : on écrit tout de suite. Sauf
+      // si la conversation a été quittée (ou supprimée) entre-temps : c'est
+      // l'effet de changement de conversation, ou discardPending, qui décide.
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        scheduleSave();
+        void autosaveRef.current?.flush();
+      }
     }
-  }, [append, userId]);
+  }, [append, commit, scheduleSave, userId]);
 
   const send = useCallback(
     (text: string) => {
       const content = text.trim();
-      if (!content || !userId || status === "streaming") return;
+      // abortRef plutôt que status : deux envois dans le même rendu verraient
+      // encore « idle » et lanceraient deux flux, dont un impossible à arrêter.
+      if (!content || !userId || abortRef.current) return;
       append("action", `send (${content.length} caractères)`);
-      void run([...messages, { role: "user", content }]);
+      void run([...messagesRef.current, { role: "user", content }]);
     },
-    [messages, status, userId, run, append],
+    [userId, run, append],
   );
 
   const stop = useCallback(() => {
@@ -132,21 +239,23 @@ export function useChat(userId: string): UseChatResult {
     void run(history);
   }, [messages, status, userId, run, append]);
 
-  const reset = useCallback(() => {
-    // Changement d'utilisateur : on repart d'une conversation vide. Sinon l'historique renvoyé
-    // au modèle contiendrait des réponses tirées des documents de l'utilisateur précédent
-    // (fuite par l'historique), et l'écran afficherait ses sources.
+  const discardPending = useCallback(async () => {
     if (abortRef.current) {
       abortRef.current.abort();
       abortRef.current = null;
+      // Le catch de run ne s'en charge pas (le flux n'est plus le sien) :
+      // sans cela, l'interface resterait « en génération » si la suppression échoue.
+      commit(dropEmptyTrailingAssistant);
+      setStatus("idle");
     }
-    setMessages([]);
-    setError(null);
-    setStatus("idle");
-    append("action", "reset : conversation vidée (changement d'utilisateur)");
-  }, [append]);
+    await autosaveRef.current?.discard();
+  }, [commit]);
 
-  return { messages, status, error, send, stop, retry, log, clearLog, reset };
+  const flushPending = useCallback(async () => {
+    await autosaveRef.current?.flush();
+  }, []);
+
+  return { messages, status, error, send, stop, retry, log, clearLog, discardPending, flushPending };
 }
 
 /** Le champ data d'un événement SSE est du JSON chez nous, mais on reste tolérant. */

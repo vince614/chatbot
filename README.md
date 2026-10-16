@@ -28,6 +28,11 @@ Fonctionnalités en place :
 - **l'API, client MCP** : par défaut (`RAG_MODE=tool`), c'est le modèle qui
   décide d'appeler `search_documents`, à travers un serveur MCP lancé pour
   chaque utilisateur ; `RAG_MODE=always` cherche avant chaque message ;
+- **historique chiffré dans le navigateur** : plusieurs conversations par
+  utilisateur, conservées dans IndexedDB et chiffrées en AES-GCM 256 avec
+  une clé non extractible (Web Crypto natif) ; rien n'est stocké côté
+  serveur ; panneau latéral (nouvelle, sélection, suppression, « Tout
+  effacer ») ;
 - **serveur MCP distant** : le même serveur en Streamable HTTP sur
   127.0.0.1, protégé par un jeton par utilisateur ; l'API s'y connecte avec
   `MCP_TRANSPORT=http`.
@@ -55,6 +60,24 @@ npm run mcp:probe -- --user chloe ["question"] [--k 3]   # client MCP de l'API, 
 ```
 
 Le front relaie tout appel à `/api/*` vers le backend (proxy Vite).
+
+## Historique des conversations
+
+Les conversations vivent **uniquement dans le navigateur** (`apps/web/src/storage/`) :
+une base IndexedDB `chatbot`, avec un magasin `conversations` et un magasin `keys`.
+Chaque conversation (utilisateur, titre, dates, messages, sources affichées)
+est chiffrée d'un bloc en AES-GCM 256, avec un IV aléatoire de 12 octets à chaque
+écriture ; seul son identifiant aléatoire reste en clair. La clé est un `CryptoKey`
+non extractible, rangé tel quel dans IndexedDB. Les échanges d'outils ne sont
+pas conservés. Le serveur reçoit toujours les messages de la conversation
+courante, le temps de la requête, et ne garde rien.
+
+Une fiche qui ne se déchiffre plus (données corrompues, clé perdue) apparaît
+« illisible » sans gêner les autres. « Tout effacer » supprime conversations
+et clé : rien n'est récupérable. Deux onglets sur la même conversation : la
+dernière écriture gagne. Ce que ce chiffrement protège, et surtout ce qu'il
+ne protège pas (XSS, extension, session ouverte, profil copié en entier) :
+[`docs/securite/memoire-locale.md`](docs/securite/memoire-locale.md).
 
 ## API
 
@@ -290,6 +313,7 @@ apps/mcp-server/src/
 ├─ config.ts, log.ts         MCP_USER_ID ou jetons, .env de l'API ; logs sur stderr uniquement
 └─ tools/                    search_documents, list_documents, runTool (erreur → isError)
 apps/web/src/chat/           UI du chat, hook useChat, parseur SSE, citations et sources, journal d'événements
+apps/web/src/storage/        historique local : IndexedDB, AES-GCM (Web Crypto), clé, sauvegarde différée, panneau des conversations
 ```
 
 Une règle commune : le reste du code ne dépend d'aucun fournisseur. On
@@ -315,3 +339,4 @@ appuyées sur le code, questions et corrigé.
 | `docs/cours/jour-4-serveur-mcp.md` | Jour 4 · Le serveur MCP : package partagé, stdio, identité fixée au lancement, outils, Inspector, `.mcp.json` |
 | `docs/cours/jour-4-client-mcp.md` | Jour 4 · L'API, client MCP : un serveur par utilisateur, le modèle décide de chercher, panne du serveur, comparaison des deux modes |
 | `docs/cours/jour-4-serveur-distant.md` | Jour 4 · Le serveur MCP distant : Streamable HTTP, sessions, jeton par requête, OAuth 2.1 expliqué, client HTTP dans l'API |
+| `docs/cours/jour-4-memoire-chiffree.md` | Jour 4 · La mémoire chiffrée : IndexedDB, AES-GCM, clé non extractible, sauvegarde différée, menaces |

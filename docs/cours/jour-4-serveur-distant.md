@@ -1,6 +1,6 @@
 # Jour 4 · Cours 4 — Le serveur MCP distant
 
-> [Sommaire](README.md) · Précédent : [Jour 4 · Cours 3 — L'API, client MCP](jour-4-client-mcp.md) · [Approfondissement : le code](approfondissement/jour-4-serveur-distant.md)
+> [Sommaire](README.md) · Précédent : [Jour 4 · Cours 3 — L'API, client MCP](jour-4-client-mcp.md) · Suivant : [Jour 4 · Cours 5 — La mémoire chiffrée](jour-4-memoire-chiffree.md) · [Approfondissement : le code](approfondissement/jour-4-serveur-distant.md)
 
 > **Prérequis.** [Le serveur MCP](jour-4-serveur-mcp.md) (stdio, identité
 > fixée par `MCP_USER_ID`) et [l'API, client MCP](jour-4-client-mcp.md) (un

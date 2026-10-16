@@ -1,5 +1,8 @@
 import { useEffect, useState, type CSSProperties } from "react";
 
+import { ConversationSidebar } from "../storage/ConversationSidebar";
+import { useConversations } from "../storage/useConversations";
+
 import { fetchUsers, type ChatUser } from "./api";
 import { Composer } from "./Composer";
 import { ErrorBanner } from "./ErrorBanner";
@@ -14,7 +17,15 @@ export function Chat() {
   const [userId, setUserId] = useState("");
   const [users, setUsers] = useState<ChatUser[]>([]);
   const [usersState, setUsersState] = useState<UsersState>("loading");
-  const { messages, status, error, send, stop, retry, log, clearLog, reset } = useChat(userId);
+  const conversations = useConversations(userId);
+  // Vrai pendant une suppression ou un effacement : aucun envoi ne doit
+  // pouvoir relancer une sauvegarde de la conversation qu'on supprime.
+  const [busy, setBusy] = useState(false);
+  const { messages, status, error, send, stop, retry, log, clearLog, discardPending, flushPending } = useChat(
+    userId,
+    conversations.current,
+    conversations.onSaved,
+  );
   const [placement, setPlacement] = useState<LogPlacement>(readPlacement);
   const [logWidth, setLogWidth] = useState(() => readSize(WIDTH_KEY, DEFAULT_WIDTH));
   const [logHeight, setLogHeight] = useState(() => readSize(HEIGHT_KEY, DEFAULT_HEIGHT));
@@ -37,10 +48,39 @@ export function Chat() {
 
   const handleUserChange = (next: string) => {
     if (next === userId) return;
-    // Géré ici, pas dans un effet : la conversation est vidée dans le même geste que le choix.
-    reset();
+    // Les conversations suivent l'utilisateur : useConversations ouvre la
+    // liste du nouveau, et useChat quitte (et sauvegarde) celle de l'ancien.
     setUserId(next);
     writeUserId(next);
+  };
+
+  // Supprimer la conversation ouverte, ou tout effacer : la sauvegarde en
+  // attente est d'abord oubliée, sinon elle réécrirait ce qu'on supprime.
+  const handleDelete = async (id: string) => {
+    setBusy(true);
+    try {
+      if (id === conversations.current?.id) await discardPending();
+      await conversations.remove(id);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleWipe = async () => {
+    setBusy(true);
+    try {
+      await discardPending();
+      await conversations.wipe();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Rouvrir une conversation la relit sur le disque : sa dernière sauvegarde
+  // doit y être arrivée, sinon on afficherait (puis écraserait) une version plus ancienne.
+  const handleSelect = async (id: string) => {
+    await flushPending();
+    await conversations.select(id);
   };
 
   const togglePlacement = () => {
@@ -57,31 +97,46 @@ export function Chat() {
 
   return (
     <div className={`layout layout--${placement}`} style={layoutStyle}>
-      <div className="chat">
-        <header className="chat__header">
-          <div>
-            <h1>Chatbot</h1>
-            <p className="chat__subtitle">Streaming, outils et journal en direct</p>
-          </div>
-          <div className="chat__header-side">
-            <UserSelect users={users} state={usersState} value={userId} onChange={handleUserChange} />
-            <span className={`status status--${status}`}>
-              <span className="status__dot" aria-hidden="true" />
-              {STATUS_LABEL[status]}
-            </span>
-          </div>
-        </header>
+      <div className="workspace">
+        {userId && (
+          <ConversationSidebar
+            items={conversations.items}
+            currentId={conversations.current?.id ?? null}
+            currentIsNew={conversations.current !== null && !conversations.items.some((item) => item.id === conversations.current?.id)}
+            disabled={busy || status === "streaming" || conversations.status !== "ready"}
+            notice={conversations.notice}
+            onCreate={conversations.create}
+            onSelect={(id) => void handleSelect(id)}
+            onDelete={(id) => void handleDelete(id)}
+            onWipe={() => void handleWipe()}
+          />
+        )}
+        <div className="chat">
+          <header className="chat__header">
+            <div>
+              <h1>Chatbot</h1>
+              <p className="chat__subtitle">Streaming, outils et journal en direct</p>
+            </div>
+            <div className="chat__header-side">
+              <UserSelect users={users} state={usersState} value={userId} onChange={handleUserChange} />
+              <span className={`status status--${status}`}>
+                <span className="status__dot" aria-hidden="true" />
+                {STATUS_LABEL[status]}
+              </span>
+            </div>
+          </header>
 
-        <MessageList messages={messages} status={status} />
+          <MessageList messages={messages} status={status} />
 
-        {status === "error" && error && <ErrorBanner message={error} onRetry={retry} />}
+          {status === "error" && error && <ErrorBanner message={error} onRetry={retry} />}
 
-        <Composer
-          disabled={status === "streaming"}
-          onSend={send}
-          onStop={stop}
-          lockedHint={userId ? undefined : "Choisis un utilisateur pour pouvoir écrire."}
-        />
+          <Composer
+            disabled={busy || status === "streaming" || !conversations.current}
+            onSend={send}
+            onStop={stop}
+            lockedHint={userId ? undefined : "Choisis un utilisateur pour pouvoir écrire."}
+          />
+        </div>
       </div>
 
       {placement === "side" ? (

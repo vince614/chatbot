@@ -1,0 +1,200 @@
+/* Le panneau des conversations, à gauche du chat. Mêmes variables que chat.css. */
+
+.workspace {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.conversations {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 0 0 260px;
+  min-height: 0;
+  padding: 18px 12px 12px;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-elevated) 70%, transparent);
+}
+
+.conversations__new {
+  padding: 9px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conversations__new:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.conversations__new:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.conversations__notice {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--danger-border);
+  border-radius: 10px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 0.78rem;
+}
+
+.conversations__list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.conversations__item {
+  display: flex;
+  align-items: stretch;
+  border-radius: 10px;
+}
+
+.conversations__item:hover {
+  background: var(--surface-hover);
+}
+
+.conversations__item--current {
+  background: var(--surface);
+}
+
+.conversations__select {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conversations__select:disabled {
+  cursor: default;
+}
+
+.conversations__title {
+  overflow: hidden;
+  font-size: 0.84rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.conversations__title--draft {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.conversations__date {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.conversations__item--unreadable .conversations__title {
+  color: var(--warning);
+}
+
+.conversations__delete {
+  flex: 0 0 auto;
+  width: 30px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 1.05rem;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.conversations__item:hover .conversations__delete,
+.conversations__item--current .conversations__delete,
+.conversations__delete:focus-visible {
+  opacity: 1;
+}
+
+.conversations__delete:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+.conversations__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.conversations__ghost,
+.conversations__danger {
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.conversations__ghost:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.conversations__ghost:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.conversations__danger {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.conversations__confirm p {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.conversations__confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.conversations__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+@media (max-width: 760px) {
+  .workspace {
+    flex-direction: column;
+  }
+
+  .conversations {
+    flex: 0 0 auto;
+    max-height: 34vh;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
