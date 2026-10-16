@@ -5,8 +5,9 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-import { PDF_DIR } from "../config.js";
-import { splitPdf } from "../document.js";
+import { splitPdf } from "@chatbot/rag/document";
+
+import { PDF_DIR } from "../../config.js";
 
 const SHORT_PREVIEW_CHARS = 200;
 

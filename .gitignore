@@ -19,3 +19,6 @@ apps/api/data/pdfs/*
 
 # Runs d'évaluation : réponses du modèle, donc extraits des documents
 apps/api/evals/runs/
+
+# Builds TypeScript incrémentaux (tsc -b)
+*.tsbuildinfo

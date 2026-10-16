@@ -3,15 +3,22 @@
 // assemblé, la réponse du modèle en flux, puis les sources citées.
 import { parseArgs } from "node:util";
 
-import { requireUser } from "../../auth/users.js";
-import { ConfigError, loadConfig } from "../../config.js";
+import { createPool } from "@chatbot/rag/db/pool";
+import { assertEmbeddingDimension } from "@chatbot/rag/db/schema";
+import { createEmbeddingClient } from "@chatbot/rag/embeddings/index";
+import { createRetriever, DEFAULT_K, formatPages } from "@chatbot/rag/retrieve";
+import { requireUser } from "@chatbot/rag/users";
+
+import {
+  ConfigError,
+  loadConfig,
+  loadDatabaseConfig,
+  loadEmbeddingConfig,
+  loadSearchMode,
+  USERS_FILE,
+} from "../../config.js";
 import { createLlmClient } from "../../llm/index.js";
-import { loadDatabaseConfig, loadEmbeddingConfig, loadSearchMode } from "../config.js";
-import { createPool } from "../db/pool.js";
-import { assertEmbeddingDimension } from "../db/schema.js";
-import { createEmbeddingClient } from "../embeddings/index.js";
 import { buildRagPrompt, extractCitations } from "../prompt.js";
-import { createRetriever, DEFAULT_K, formatPages } from "../retrieve.js";
 
 const RULE = "━".repeat(72);
 
@@ -28,7 +35,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const user = await requireUser(values.user);
+  const user = await requireUser(USERS_FILE, values.user);
   const llm = createLlmClient(loadConfig().llm);
   const dbConfig = loadDatabaseConfig();
   const pool = createPool(dbConfig.databaseUrl);

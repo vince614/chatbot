@@ -1,6 +1,5 @@
+import type { User } from "@chatbot/rag/users";
 import type { FastifyRequest } from "fastify";
-
-import type { User } from "./users.js";
 
 /**
  * ⚠️ REMPLAÇANT D'AUTHENTIFICATION — EXERCICE UNIQUEMENT, JAMAIS EN PRODUCTION ⚠️

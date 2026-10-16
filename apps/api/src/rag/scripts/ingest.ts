@@ -7,14 +7,14 @@ import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { ConfigError } from "../../config.js";
-import { type Acl, ACL_FILE, loadAcl } from "../acl.js";
-import { loadDatabaseConfig, loadEmbeddingConfig, PDF_DIR } from "../config.js";
-import { createPool } from "../db/pool.js";
-import { applyAcl, getDocumentHashes, replaceDocument } from "../db/repository.js";
-import { assertEmbeddingDimension } from "../db/schema.js";
-import { splitPdf } from "../document.js";
-import { createEmbeddingClient, type EmbeddingClient } from "../embeddings/index.js";
+import { type Acl, loadAcl } from "@chatbot/rag/acl";
+import { createPool } from "@chatbot/rag/db/pool";
+import { applyAcl, getDocumentHashes, replaceDocument } from "@chatbot/rag/db/repository";
+import { assertEmbeddingDimension } from "@chatbot/rag/db/schema";
+import { splitPdf } from "@chatbot/rag/document";
+import { createEmbeddingClient, type EmbeddingClient } from "@chatbot/rag/embeddings/index";
+
+import { ACL_FILE, ConfigError, loadDatabaseConfig, loadEmbeddingConfig, PDF_DIR } from "../../config.js";
 
 type Outcome = "ingested" | "skipped" | "failed";
 
@@ -31,7 +31,7 @@ async function main(): Promise<void> {
     await assertEmbeddingDimension(pool, dbConfig.embeddingDimension);
 
     // L'ACL est lue en premier : invalide, rien n'est ingéré ni modifié.
-    const acl = await loadAcl();
+    const acl = await loadAcl(ACL_FILE);
     const files = await listPdfs(PDF_DIR);
     warnAboutAcl(acl, files);
     const known = await getDocumentHashes(pool);

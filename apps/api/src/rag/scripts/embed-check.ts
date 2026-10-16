@@ -1,8 +1,8 @@
 // npm run rag:embed-check — vérifie la config Voyage sur trois phrases d'exemple.
 // Aucun accès à la base ; consomme quelques dizaines de tokens.
-import { ConfigError } from "../../config.js";
-import { loadEmbeddingConfig } from "../config.js";
-import { createEmbeddingClient } from "../embeddings/index.js";
+import { createEmbeddingClient } from "@chatbot/rag/embeddings/index";
+
+import { ConfigError, loadEmbeddingConfig } from "../../config.js";
 
 const PASSAGES = [
   "Les frais de connexion internet sont remboursés à hauteur de 30 euros par mois en télétravail.",

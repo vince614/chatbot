@@ -1,16 +1,15 @@
-import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 
+import * as rag from "@chatbot/rag/config";
+import { loadDotEnv as loadEnvFile, requireEnv } from "@chatbot/rag/env";
+
 import type { LlmClientOptions } from "./llm/index.js";
+
+export { ConfigError } from "@chatbot/rag/env";
 
 export interface Config {
   port: number;
   llm: LlmClientOptions;
-}
-
-/** Erreur de configuration : le message est destiné à être affiché tel quel. */
-export class ConfigError extends Error {
-  override readonly name = "ConfigError";
 }
 
 const REQUIRED_VARS = ["LLM_PROVIDER", "LLM_API_KEY", "LLM_MODEL"] as const;
@@ -38,33 +37,34 @@ export function loadConfig(): Config {
 
 /** Charge apps/api/.env dans process.env. Un fichier absent est toléré. */
 export function loadDotEnv(): void {
-  try {
-    loadEnvFile(ENV_FILE);
-  } catch (error) {
-    // Fichier absent : on tolère, les variables peuvent venir de l'environnement.
-    if (!isFileNotFound(error)) throw error;
-  }
+  loadEnvFile(ENV_FILE);
 }
 
-/** Lance une ConfigError listant les variables absentes ou vides. */
-export function requireEnv(names: readonly string[]): void {
-  const missing = names.filter((name) => !process.env[name]?.trim());
-  if (missing.length > 0) {
-    throw new ConfigError(
-      [
-        `Variable(s) d'environnement manquante(s) : ${missing.join(", ")}.`,
-        `Copie apps/api/.env.example vers apps/api/.env et renseigne les valeurs.`,
-        `Fichier attendu : ${ENV_FILE}`,
-      ].join("\n"),
-    );
-  }
+/** Dossier où tu déposes les PDF à ingérer (apps/api/data/pdfs/), indépendant du répertoire courant. */
+export const PDF_DIR = fileURLToPath(new URL("../data/pdfs/", import.meta.url));
+
+/** Les droits d'accès aux PDF (voir @chatbot/rag/acl). */
+export const ACL_FILE = `${PDF_DIR}acl.json`;
+
+/** L'annuaire des utilisateurs fictifs (voir @chatbot/rag/users). */
+export const USERS_FILE = fileURLToPath(new URL("../data/users.json", import.meta.url));
+
+/*
+ * La configuration du RAG vit dans @chatbot/rag ; l'API charge d'abord son
+ * propre .env, puis la lit.
+ */
+
+export function loadDatabaseConfig(): rag.DatabaseConfig {
+  loadDotEnv();
+  return rag.loadDatabaseConfig();
 }
 
-function isFileNotFound(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === "ENOENT"
-  );
+export function loadEmbeddingConfig(): ReturnType<typeof rag.loadEmbeddingConfig> {
+  loadDotEnv();
+  return rag.loadEmbeddingConfig();
+}
+
+export function loadSearchMode(): ReturnType<typeof rag.loadSearchMode> {
+  loadDotEnv();
+  return rag.loadSearchMode();
 }

@@ -4,6 +4,12 @@
 
 > Ce document suit le code **tel qu'il est aujourd'hui dans le dépôt**. Lis
 > d'abord le cours ; viens ici quand tu veux savoir *comment* c'est écrit.
+>
+> **Depuis [le serveur MCP](jour-4-serveur-mcp.md)**, le code commun du RAG
+> vit dans `packages/rag/` (`@chatbot/rag`). Les chemins ci-dessous sont à
+> jour ; dans les extraits, les imports et la lecture des fichiers (`.env`,
+> `users.json`, `acl.json`) ont changé : c'est désormais l'application qui
+> donne les chemins au package.
 > Chaque extrait indique son fichier : ouvre-le à côté.
 
 ## Carte des fichiers
@@ -16,7 +22,7 @@
 | `apps/api/src/evals/report.ts` | Génère le rapport `.md` et le fichier de notes `.notes.json` | 3, 4 |
 | `apps/api/src/evals/score.ts` | `npm run eval:score` : additionne les notes et diagnostique les échecs | 3, 4 |
 | `apps/api/src/llm/types.ts`, `llm/anthropic.ts` | Le paramètre `effort` (`LlmEffort`, `output_config`) | 2 |
-| `apps/api/src/rag/db/repository.ts` | `listDocuments` : les documents en base, pour la configuration du run | 2 |
+| `packages/rag/src/db/repository.ts` | `listDocuments` : les documents en base, pour la configuration du run | 2 |
 | `apps/api/evals/runs/` | Les runs produits (ignorés par Git, cf. `.gitignore`) | 0 |
 
 ## Le parcours dans le code
@@ -443,7 +449,7 @@ Si `effort` vaut `undefined`, l'expression vaut `undefined` et l'étalement
 n'ajoute rien ; sinon il ajoute `output_config: { effort }` à la requête.
 L'API ne reçoit donc pas de champ vide quand `/chat` n'impose rien.
 
-### `listDocuments()` (`apps/api/src/rag/db/repository.ts`)
+### `listDocuments()` (`packages/rag/src/db/repository.ts`)
 
 ```ts
 export async function listDocuments(

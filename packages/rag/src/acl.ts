@@ -2,8 +2,7 @@ import { readFile } from "node:fs/promises";
 
 import { z } from "zod";
 
-import { ConfigError } from "../config.js";
-import { PDF_DIR } from "./config.js";
+import { ConfigError } from "./env.js";
 
 /**
  * Les droits d'accès aux documents : data/pdfs/acl.json associe chaque nom de
@@ -15,8 +14,6 @@ import { PDF_DIR } from "./config.js";
  * Refus par défaut : un PDF absent de l'ACL, ou associé à une liste vide,
  * n'est visible par personne. Rien n'est jamais public par défaut.
  */
-
-export const ACL_FILE = `${PDF_DIR}acl.json`;
 
 /** Un nom de groupe : lettres, chiffres, « - » et « _ » (pas d'espace parasite, pas de casse ambiguë). */
 export const groupSchema = z.string().regex(/^[a-z0-9_-]+$/, "groupe invalide (attendu : minuscules, chiffres, - ou _)");
@@ -31,7 +28,7 @@ export type Acl = Map<string, string[]>;
  * lecture échoue avant toute écriture, plutôt que de retirer en silence les
  * droits de tous les documents à cause d'une faute de frappe.
  */
-export async function loadAcl(file = ACL_FILE): Promise<Acl> {
+export async function loadAcl(file: string): Promise<Acl> {
   let text: string;
   try {
     text = await readFile(file, "utf8");

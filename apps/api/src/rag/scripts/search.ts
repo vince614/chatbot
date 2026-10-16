@@ -3,13 +3,10 @@
 // l'utilisateur a le droit de lire, via retrieve().
 import { parseArgs } from "node:util";
 
-import { requireUser } from "../../auth/users.js";
-import { ConfigError } from "../../config.js";
-import { loadDatabaseConfig, loadEmbeddingConfig, loadSearchMode } from "../config.js";
-import { createPool } from "../db/pool.js";
-import { LEXICAL_SEARCH_SQL, SEARCH_SQL, toSqlVector } from "../db/repository.js";
-import { assertEmbeddingDimension } from "../db/schema.js";
-import { createEmbeddingClient } from "../embeddings/index.js";
+import { createPool } from "@chatbot/rag/db/pool";
+import { LEXICAL_SEARCH_SQL, SEARCH_SQL, toSqlVector } from "@chatbot/rag/db/repository";
+import { assertEmbeddingDimension } from "@chatbot/rag/db/schema";
+import { createEmbeddingClient } from "@chatbot/rag/embeddings/index";
 import {
   createRetriever,
   DEFAULT_K,
@@ -19,7 +16,10 @@ import {
   SEARCH_MODES,
   type SearchMode,
   type SearchRanks,
-} from "../retrieve.js";
+} from "@chatbot/rag/retrieve";
+import { requireUser } from "@chatbot/rag/users";
+
+import { ConfigError, loadDatabaseConfig, loadEmbeddingConfig, loadSearchMode, USERS_FILE } from "../../config.js";
 
 const EXCERPT_CHARS = 300;
 
@@ -45,7 +45,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const user = await requireUser(values.user);
+  const user = await requireUser(USERS_FILE, values.user);
   const dbConfig = loadDatabaseConfig();
   const embedder = createEmbeddingClient(loadEmbeddingConfig());
   const pool = createPool(dbConfig.databaseUrl);

@@ -3,8 +3,12 @@ import { fileURLToPath } from "node:url";
 
 import type pg from "pg";
 
-/** Dossier des fichiers NNN_nom.sql, appliqués dans l'ordre alphabétique. */
-const MIGRATIONS_DIR = fileURLToPath(new URL("./migrations/", import.meta.url));
+/**
+ * Dossier des fichiers NNN_nom.sql, appliqués dans l'ordre alphabétique :
+ * packages/rag/migrations/. Le chemin est le même depuis src/db/ (sources
+ * lues par tsx) et depuis dist/db/ (build lu par node).
+ */
+const MIGRATIONS_DIR = fileURLToPath(new URL("../../migrations/", import.meta.url));
 
 /** Marqueurs remplacés dans le SQL avant exécution. */
 interface MigrationVariables {

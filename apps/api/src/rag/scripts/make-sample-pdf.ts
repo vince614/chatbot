@@ -8,7 +8,7 @@ import path from "node:path";
 
 import { PDFDocument, type PDFFont, StandardFonts } from "pdf-lib";
 
-import { PDF_DIR } from "../config.js";
+import { PDF_DIR } from "../../config.js";
 
 const FILE_NAME = "reglement-interieur.pdf";
 

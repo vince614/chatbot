@@ -4,6 +4,12 @@
 
 > Ce document suit le code **tel qu'il est aujourd'hui dans le dépôt**. Lis
 > d'abord le cours ; viens ici quand tu veux savoir *comment* c'est écrit.
+>
+> **Depuis [le serveur MCP](jour-4-serveur-mcp.md)**, le code commun du RAG
+> vit dans `packages/rag/` (`@chatbot/rag`). Les chemins ci-dessous sont à
+> jour ; dans les extraits, les imports et la lecture des fichiers (`.env`,
+> `users.json`, `acl.json`) ont changé : c'est désormais l'application qui
+> donne les chemins au package.
 > Chaque extrait indique son fichier : ouvre-le à côté.
 
 ## Carte des fichiers
@@ -69,7 +75,7 @@ healthcheck, donc la commande ne rend la main qu'une fois la base prête.
 
 ---
 
-## `apps/api/src/rag/config.ts`
+## `packages/rag/src/config.ts`
 
 Lit les variables du RAG, séparément de celles du serveur de chat.
 
@@ -103,7 +109,7 @@ réclame que ce qu'il utilise (`db:migrate` n'a pas besoin de clé Voyage).
 
 ---
 
-## `apps/api/src/rag/db/` : migration, schéma, pool
+## `packages/rag/src/db/` : migration, schéma, pool
 
 Le SQL de `001_init.sql` est dans le cours (leçon 1). Ce qu'il faut y voir
 côté code : `GENERATED ALWAYS AS IDENTITY` numérote les lignes ;
@@ -171,7 +177,7 @@ ferme avec `pool.end()` dans un `finally`, sinon Node ne s'arrête pas.
 
 ---
 
-## `apps/api/src/rag/pdf/extract.ts`
+## `packages/rag/src/pdf/extract.ts`
 
 Transforme les octets d'un PDF en pages `{ pageNumber, text }`.
 
@@ -233,7 +239,7 @@ Le code est dans le cours (leçon 3). Pas à pas :
 
 ---
 
-## `apps/api/src/rag/text/types.ts` et `tokens.ts`
+## `packages/rag/src/text/types.ts` et `tokens.ts`
 
 `types.ts` définit `Page` (`pageNumber`, `text`), `Chunk` (`index`,
 `pageStart`, `pageEnd`, `content`, `tokenCount`) et `TokenCounter`, le type
@@ -246,7 +252,7 @@ peut lui passer `(t) => t.split(" ").length`.
 
 ---
 
-## `apps/api/src/rag/text/clean.ts`
+## `packages/rag/src/text/clean.ts`
 
 Texte brut de chaque page → paragraphes séparés par `"\n\n"`. Tout est pur.
 
@@ -349,7 +355,7 @@ réutilise cette fonction pour les paragraphes coupés par un saut de page.
 
 ---
 
-## `apps/api/src/rag/text/chunk.ts`
+## `packages/rag/src/text/chunk.ts`
 
 Transforme les pages nettoyées en chunks d'environ 500 tokens, coupés de
 préférence sur une fin de paragraphe, avec recouvrement.
@@ -574,7 +580,7 @@ additionne simplement les `tokens` d'une liste.
 
 ---
 
-## `apps/api/src/rag/document.ts`
+## `packages/rag/src/document.ts`
 
 `splitPdf(pdfBytes)` enchaîne `extractPages`, `cleanPages` et `chunkPages`
 avec le vrai `countTokens` et les constantes exportées
@@ -585,7 +591,7 @@ même fonction : l'aperçu montre exactement ce qui sera ingéré.
 
 ---
 
-## `apps/api/src/rag/embeddings/` : contrat et lots
+## `packages/rag/src/embeddings/` : contrat et lots
 
 `types.ts` définit `EmbeddingClient` : `dimension`,
 `embedDocuments(texts, options)` qui renvoie `{ vectors, totalTokens }`, et
@@ -608,7 +614,7 @@ permettent ensuite de ranger chaque vecteur à la place de son texte.
 
 ---
 
-## `apps/api/src/rag/embeddings/retry.ts`
+## `packages/rag/src/embeddings/retry.ts`
 
 `EmbeddingApiError` (code dans le cours, leçon 6) porte `status` et
 `retryAfterMs` ; `retryable` vaut vrai pour 429 et 5xx.
@@ -656,7 +662,7 @@ Ctrl+C est une `AbortError` : elle n'est pas réessayée.
 
 ---
 
-## `apps/api/src/rag/embeddings/voyage.ts`
+## `packages/rag/src/embeddings/voyage.ts`
 
 Le seul fichier qui connaît l'API Voyage : un `POST /v1/embeddings` en
 `fetch`, sans SDK.
@@ -726,7 +732,7 @@ date HTTP (écart avec maintenant, jamais négatif) ; sinon `undefined`.
 
 ---
 
-## `apps/api/src/rag/db/repository.ts`
+## `packages/rag/src/db/repository.ts`
 
 Tout le SQL du RAG. `toSqlVector` écrit un tableau sous la forme texte que
 pgvector lit, `[0.12,-0.03,…]`. `getDocumentHashes` charge en une requête

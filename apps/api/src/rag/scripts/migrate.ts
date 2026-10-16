@@ -1,9 +1,9 @@
 // npm run db:migrate — crée ou met à jour le schéma du RAG.
-import { ConfigError } from "../../config.js";
-import { loadDatabaseConfig } from "../config.js";
-import { runMigrations } from "../db/migrate.js";
-import { createPool } from "../db/pool.js";
-import { assertEmbeddingDimension } from "../db/schema.js";
+import { runMigrations } from "@chatbot/rag/db/migrate";
+import { createPool } from "@chatbot/rag/db/pool";
+import { assertEmbeddingDimension } from "@chatbot/rag/db/schema";
+
+import { ConfigError, loadDatabaseConfig } from "../../config.js";
 
 async function main(): Promise<void> {
   const config = loadDatabaseConfig();

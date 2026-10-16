@@ -1,4 +1,4 @@
-import { formatPages, type RetrievedChunk } from "./retrieve.js";
+import { formatPages, type RetrievedChunk } from "@chatbot/rag/retrieve";
 
 /**
  * Construction du prompt RAG. Fonctions pures : une question et des passages

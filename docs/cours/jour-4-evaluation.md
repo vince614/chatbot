@@ -1,6 +1,6 @@
 # Jour 4 · Cours 1 — L'évaluation automatique
 
-> [Sommaire](README.md) · Précédent : [Jour 3 · Cours 2 — Les droits d'accès](jour-3-droits.md) · [Approfondissement : le code](approfondissement/jour-4-evaluation.md)
+> [Sommaire](README.md) · Précédent : [Jour 3 · Cours 2 — Les droits d'accès](jour-3-droits.md) · Suivant : [Jour 4 · Cours 2 — Le serveur MCP](jour-4-serveur-mcp.md) · [Approfondissement : le code](approfondissement/jour-4-evaluation.md)
 
 > **Prérequis.** [Le jeu de test](jour-2-jeu-de-test.md) (20 questions,
 > notation à la main) et [les droits d'accès](jour-3-droits.md) (`--user`).

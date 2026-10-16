@@ -4,6 +4,12 @@
 
 > Ce document suit le code **tel qu'il est aujourd'hui dans le dépôt**. Lis
 > d'abord le cours ; viens ici quand tu veux savoir *comment* c'est écrit.
+>
+> **Depuis [le serveur MCP](jour-4-serveur-mcp.md)**, le code commun du RAG
+> vit dans `packages/rag/` (`@chatbot/rag`). Les chemins ci-dessous sont à
+> jour ; dans les extraits, les imports et la lecture des fichiers (`.env`,
+> `users.json`, `acl.json`) ont changé : c'est désormais l'application qui
+> donne les chemins au package.
 > Chaque extrait indique son fichier : ouvre-le à côté.
 
 ## Carte des fichiers
@@ -11,7 +17,7 @@
 | Fichier | Rôle | Leçon du cours |
 | --- | --- | --- |
 | `apps/api/src/server.ts` | crée le pool Postgres et `retrieve`, les donne à la route | 1, 6 |
-| `apps/api/src/rag/retrieve.ts` | question → les k passages les plus proches ; `formatPages` | 1 |
+| `packages/rag/src/retrieve.ts` | question → les k passages les plus proches ; `formatPages` | 1 |
 | `apps/api/src/rag/prompt.ts` | règles, `buildRagPrompt`, protections, `extractCitations` | 2 |
 | `apps/api/src/routes/chat.ts` | recherche → `sources` → prompt → boucle modèle ; erreurs | 3, 6 |
 | `apps/api/src/sse.ts` | type `SourceSummary`, événement `sources` | 3 |
@@ -239,7 +245,7 @@ renvoie `Nom: message`.
 **Pourquoi c'est écrit ainsi** : base arrêtée, Node tente l'adresse IPv6 puis IPv4 et rejette avec
 une `AggregateError` au message vide. Sans ce cas, le log dirait seulement `AggregateError: `.
 
-## `apps/api/src/rag/retrieve.ts`
+## `packages/rag/src/retrieve.ts`
 
 Une question en entrée, des passages triés en sortie, sans rien savoir de Fastify ni du `.env`.
 

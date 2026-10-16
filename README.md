@@ -5,6 +5,9 @@ npm workspaces.
 
 - `apps/api` : backend Node 20+ / Fastify / TypeScript strict
 - `apps/web` : frontend React / Vite / TypeScript strict
+- `apps/mcp-server` : le RAG exposé comme serveur MCP (stdio)
+- `packages/rag` : le RAG partagé (`@chatbot/rag`) : ingestion, base,
+  embeddings, recherche, droits d'accès
 
 Fonctionnalités en place :
 
@@ -18,7 +21,10 @@ Fonctionnalités en place :
 - **réponses sourcées** : à chaque message, le chat cherche les 5 passages
   les plus proches, répond uniquement à partir d'eux (« Je ne sais pas »
   sinon) et cite ses sources `[1]`, `[2]` ; l'interface affiche les sources
-  citées, dépliables, et les pastilles renvoient à l'extrait.
+  citées, dépliables, et les pastilles renvoient à l'extrait ;
+- **serveur MCP** : `search_documents` et `list_documents`, utilisables par
+  Claude Code ou tout client MCP, avec les droits d'un utilisateur fixé au
+  lancement.
 
 ## Installation
 
@@ -37,7 +43,7 @@ npm run rag:sample-pdf && npm run ingest # un document de test, ingéré
 
 ```bash
 npm run dev          # api (http://localhost:3000) + web (http://localhost:5173) en parallèle
-npm run typecheck    # tsc --noEmit dans chaque workspace
+npm run typecheck    # vérification des types dans chaque workspace (compile packages/rag au passage)
 npm run hello        # envoie une question en dur au LLM et affiche la réponse en flux
 ```
 
@@ -76,9 +82,10 @@ curl -N -X POST http://localhost:3000/api/chat \
 
 ## RAG : ingestion, recherche et réponse
 
-Le code vit dans `apps/api/src/rag/`. L'ingestion est un ensemble de scripts,
-séparé du serveur ; la recherche (`retrieve`) et le prompt (`buildRagPrompt`)
-sont utilisés à la fois par les scripts et par `POST /api/chat`.
+Le code commun vit dans `packages/rag/` (`@chatbot/rag`), importé par l'API
+et par le serveur MCP. Les scripts d'ingestion restent dans
+`apps/api/src/rag/scripts/`, séparés du serveur ; le prompt (`buildRagPrompt`)
+reste dans `apps/api/src/rag/prompt.ts`.
 
 ```bash
 npm run db:up                             # Postgres 17 + pgvector (docker compose, port 5433)
@@ -127,12 +134,37 @@ groupe avec l'utilisateur, filtrés dans le `WHERE` de chaque requête SQL.
 Avec l'ACL d'exemple : alice (`rh`) voit le règlement, bruno (`tech`)
 DiscordInvites, chloe les deux.
 
+## Serveur MCP
+
+Le RAG est aussi exposé comme serveur MCP, en transport stdio
+(`apps/mcp-server`). Il se connecte directement à la base et lit
+`apps/api/.env` et `apps/api/data/users.json`. L'utilisateur est fixé au
+lancement par `MCP_USER_ID` : sans lui, ou s'il est inconnu, le serveur
+refuse de démarrer.
+
+| Outil | Arguments | Rôle |
+| --- | --- | --- |
+| `search_documents` | `question`, `k` (1 à 10, 5 par défaut) | les passages les plus proches, parmi les documents autorisés : fichier, pages, extrait, score |
+| `list_documents` | aucun | les documents autorisés : fichier, nombre de pages, date d'ingestion |
+
+```bash
+npm run --silent mcp                     # compile puis lance le serveur (attend un client sur stdin)
+npx @modelcontextprotocol/inspector -e MCP_USER_ID=chloe npm run --silent mcp   # MCP Inspector (interface web)
+npx @modelcontextprotocol/inspector --cli --config .mcp.json --server chatbot-rag --method tools/list
+```
+
+`.mcp.json`, à la racine, déclare ce serveur pour Claude Code (avec
+`MCP_USER_ID=chloe`) : lance `claude` dans ce dossier, accepte le serveur,
+puis `/mcp` pour voir son état. En stdio, rien ne doit être écrit sur
+stdout en dehors du protocole : d'où `--silent`, et les logs sur stderr.
+
 Pour arrêter la base : `docker compose down` (les données restent dans le
 volume), ou `docker compose down -v` pour tout effacer.
 
 ## Variables d'environnement
 
-Elles vivent uniquement dans `apps/api/.env` (ignoré par git). Chaque
+Elles vivent uniquement dans `apps/api/.env` (ignoré par git), lu aussi par
+le serveur MCP. Chaque
 programme refuse de démarrer si une variable dont il a besoin manque : le
 serveur les exige toutes, les scripts RAG seulement les leurs (`db:migrate`
 fonctionne sans clé). Une base arrêtée n'empêche pas le serveur de démarrer :
@@ -150,6 +182,7 @@ le chat renvoie alors une erreur « recherche indisponible ».
 | `EMBEDDING_MODEL` | Modèle d'embeddings | `voyage-3.5` |
 | `EMBEDDING_DIMENSION` | Dimension des vecteurs (256, 512, 1024 ou 2048). Figée dans la colonne SQL à la migration. | `1024` |
 | `RAG_SEARCH_MODE` | Recherche par défaut : `vector`, `lexical` ou `hybrid`. Optionnelle (`vector` si absente). | `vector` |
+| `MCP_USER_ID` | Utilisateur du serveur MCP (`data/users.json`). Passée par le client MCP (`.mcp.json`, Inspector), pas dans `.env`. | `chloe` |
 | `EVAL_JUDGE_MODEL` | Modèle juge de l'exactitude (`npm run eval`), distinct de `LLM_MODEL` et acceptant `temperature: 0`. Optionnelle. | `claude-haiku-4-5` |
 
 Les clés ne sont jamais exposées au front : Vite ne publie que les variables
@@ -162,27 +195,33 @@ ne sont pas comparables.
 ## Architecture
 
 ```
+packages/rag/                @chatbot/rag, partagé par l'API et le serveur MCP
+├─ src/retrieve.ts           createRetriever → retrieve(question, { userGroups, k, mode })
+├─ src/acl.ts, users.ts      droits par document, utilisateurs fictifs (chemins donnés par l'application)
+├─ src/config.ts, env.ts     configuration lue dans process.env, ConfigError, loadDotEnv(fichier)
+├─ src/pdf/, text/           extraction, nettoyage, découpage (fonctions pures)
+├─ src/embeddings/           EmbeddingClient + fabrique ; seul voyage.ts connaît l'API Voyage
+├─ src/db/                   pool, migrations, requêtes SQL (recherche, ACL, liste des documents)
+└─ migrations/               fichiers SQL
 apps/api/src/
-├─ server.ts, config.ts     démarrage Fastify, configuration
-├─ routes/chat.ts           POST /api/chat : identité, recherche, sources, boucle modèle ↔ outils, flux SSE
-├─ auth/                    utilisateurs fictifs (users.ts), X-User-Id (fake-identity.ts, remplaçant d'authentification)
-├─ llm/                     LlmClient + fabrique ; seul anthropic.ts importe le SDK
-├─ tools/                   registre d'outils (validation Zod, délai, erreurs → résultat)
-└─ rag/
-   ├─ retrieve.ts           createRetriever → retrieve(question, { userGroups, k, mode })
-   ├─ acl.ts                lecture et validation de data/pdfs/acl.json
-   ├─ prompt.ts             prompt système RAG, buildRagPrompt, extractCitations (purs)
-   ├─ pdf/, text/           extraction, nettoyage, découpage (fonctions pures)
-   ├─ embeddings/           EmbeddingClient + fabrique ; seul voyage.ts connaît l'API Voyage
-   ├─ db/                   migrations, requêtes SQL
-   └─ scripts/              migrate, preview, embed-check, ingest, search, ask, sample-pdf
-apps/api/src/evals/         run, graders (code + juge), scores, rapport, historique, calibration, comparaison
-apps/web/src/chat/          UI du chat, hook useChat, parseur SSE, citations et sources, journal d'événements
+├─ server.ts, config.ts      démarrage Fastify, configuration, chemins (.env, data/)
+├─ routes/chat.ts            POST /api/chat : identité, recherche, sources, boucle modèle ↔ outils, flux SSE
+├─ auth/fake-identity.ts     X-User-Id, remplaçant d'authentification
+├─ llm/                      LlmClient + fabrique ; seul anthropic.ts importe le SDK
+├─ tools/                    registre d'outils (validation Zod, délai, erreurs → résultat)
+├─ rag/prompt.ts             prompt système RAG, buildRagPrompt, extractCitations (purs)
+├─ rag/scripts/              migrate, preview, embed-check, ingest, search, ask, sample-pdf
+└─ evals/                    run, graders (code + juge), scores, rapport, historique, calibration, comparaison
+apps/mcp-server/src/
+├─ index.ts                  config → base → McpServer + outils → transport stdio
+├─ config.ts, log.ts         MCP_USER_ID, .env de l'API ; logs sur stderr uniquement
+└─ tools/                    search_documents, list_documents, runTool (erreur → isError)
+apps/web/src/chat/           UI du chat, hook useChat, parseur SSE, citations et sources, journal d'événements
 ```
 
 Une règle commune : le reste du code ne dépend d'aucun fournisseur. On
 n'importe que `llm/index.js` (`LlmClient`, `createLlmClient`) ou
-`rag/embeddings/index.js` (`EmbeddingClient`, `createEmbeddingClient`).
+`@chatbot/rag/embeddings/index` (`EmbeddingClient`, `createEmbeddingClient`).
 
 ## Cours
 
@@ -200,3 +239,4 @@ appuyées sur le code, questions et corrigé.
 | `docs/cours/jour-3-hybride.md` | Jour 3 · La recherche hybride : plein texte Postgres, identifiants, fusion RRF, comparaison des modes |
 | `docs/cours/jour-3-droits.md` | Jour 3 · Les droits d'accès : ACL par document, filtre dans la recherche, identité dans l'API |
 | `docs/cours/jour-4-evaluation.md` | Jour 4 · L'évaluation automatique : graders par code, juge LLM calibré, commande unique, historique |
+| `docs/cours/jour-4-serveur-mcp.md` | Jour 4 · Le serveur MCP : package partagé, stdio, identité fixée au lancement, outils, Inspector, `.mcp.json` |

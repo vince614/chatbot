@@ -121,6 +121,31 @@ export async function applyAcl(
   return rows.map((row) => ({ fileName: row.file_name, allowedGroups: row.allowed_groups }));
 }
 
+export interface VisibleDocument {
+  fileName: string;
+  /** Dernière page qui contient du texte (MAX(page_end) des chunks) : la base ne stocke pas le nombre de pages du PDF. */
+  pages: number;
+  ingestedAt: Date;
+}
+
+/**
+ * Les documents que ces groupes peuvent lire. Le filtre est dans le WHERE,
+ * comme pour la recherche : un document interdit ne sort jamais de la base,
+ * pas même son nom.
+ */
+export async function listVisibleDocuments(pool: pg.Pool, userGroups: readonly string[]): Promise<VisibleDocument[]> {
+  if (userGroups.length === 0) return [];
+  const { rows } = await pool.query<{ file_name: string; pages: number; ingested_at: Date }>(
+    `SELECT d.file_name, COALESCE(MAX(c.page_end), 0)::int AS pages, d.ingested_at
+     FROM documents d LEFT JOIN chunks c ON c.document_id = d.id
+     WHERE d.allowed_groups && $1::text[]
+     GROUP BY d.id
+     ORDER BY d.file_name`,
+    [userGroups],
+  );
+  return rows.map((row) => ({ fileName: row.file_name, pages: row.pages, ingestedAt: row.ingested_at }));
+}
+
 export interface SearchResult {
   fileName: string;
   chunkIndex: number;

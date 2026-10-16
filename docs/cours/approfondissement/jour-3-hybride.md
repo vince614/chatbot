@@ -4,6 +4,12 @@
 
 > Ce document suit le code **tel qu'il est aujourd'hui dans le dépôt**. Lis
 > d'abord le cours ; viens ici quand tu veux savoir *comment* c'est écrit.
+>
+> **Depuis [le serveur MCP](jour-4-serveur-mcp.md)**, le code commun du RAG
+> vit dans `packages/rag/` (`@chatbot/rag`). Les chemins ci-dessous sont à
+> jour ; dans les extraits, les imports et la lecture des fichiers (`.env`,
+> `users.json`, `acl.json`) ont changé : c'est désormais l'application qui
+> donne les chemins au package.
 > Chaque extrait indique son fichier : ouvre-le à côté.
 >
 > **Note.** Le cours suivant (droits d'accès) a ajouté `userGroups` et
@@ -14,10 +20,10 @@
 
 | Fichier | Rôle | Leçon du cours |
 | --- | --- | --- |
-| `apps/api/src/rag/db/migrations/002_fulltext.sql` | colonne générée `content_tsv` et son index GIN | 1 |
-| `apps/api/src/rag/db/repository.ts` | `LEXICAL_SEARCH_SQL`, `searchLexical`, `SearchRow`, `toSearchResult`, sens du `score` | 1, 2, 3 |
-| `apps/api/src/rag/retrieve.ts` | `SEARCH_MODES`, `SearchRanks`, `createRetriever` (les trois modes), `fuseByRrf` | 0, 4, 5 |
-| `apps/api/src/rag/config.ts` | `loadSearchMode` : lit et valide `RAG_SEARCH_MODE` | 5 |
+| `packages/rag/migrations/002_fulltext.sql` | colonne générée `content_tsv` et son index GIN | 1 |
+| `packages/rag/src/db/repository.ts` | `LEXICAL_SEARCH_SQL`, `searchLexical`, `SearchRow`, `toSearchResult`, sens du `score` | 1, 2, 3 |
+| `packages/rag/src/retrieve.ts` | `SEARCH_MODES`, `SearchRanks`, `createRetriever` (les trois modes), `fuseByRrf` | 0, 4, 5 |
+| `packages/rag/src/config.ts` | `loadSearchMode` : lit et valide `RAG_SEARCH_MODE` | 5 |
 | `apps/api/src/server.ts` | donne le mode par défaut au `retrieve` de `/chat` | 5 |
 | `apps/api/src/rag/scripts/ask.ts` | idem pour `npm run ask` | 5 |
 | `apps/api/src/rag/scripts/search.ts` | `npm run search` : `--mode`, `--sql`, `--explain`, `formatRanks` | 2, 3, 4 |
@@ -58,7 +64,7 @@ Côté `/chat`, c'est le même chemin à partir de l'étape 3 : `server.ts` a cr
 `defaultMode: config.rag.searchMode`, et la route l'appelle **sans** `mode`. `chat.ts` n'a pas
 changé : la valeur `score` qu'il met dans l'événement `sources` est simplement le score RRF.
 
-## `apps/api/src/rag/db/migrations/002_fulltext.sql`
+## `packages/rag/migrations/002_fulltext.sql`
 
 La deuxième migration, appliquée par `npm run db:migrate` (`runMigrations` passe les fichiers
 `.sql` dans l'ordre alphabétique et note chacun dans `schema_migrations`).
@@ -93,7 +99,7 @@ CREATE INDEX chunks_content_tsv_idx ON chunks USING gin (content_tsv);
 - **GIN** : sans lui, `@@` teste chaque chunk un par un. Avec 13 chunks, Postgres préfère encore ce
   parcours séquentiel (voir `--explain` plus bas) ; l'index sert quand la base grossit.
 
-## `apps/api/src/rag/db/repository.ts`
+## `packages/rag/src/db/repository.ts`
 
 Toutes les requêtes SQL du RAG. Quatre ajouts : le sens du `score`, la requête plein texte, sa
 fonction, et la conversion des lignes partagée avec la recherche vectorielle.
@@ -245,7 +251,7 @@ noms ; une seule conversion garantit que `fuseByRrf` reçoit deux listes de form
 `Number(…)` protège des types que `pg` renvoie en chaîne (`numeric`, `bigint`), si une requête
 change un jour.
 
-## `apps/api/src/rag/retrieve.ts`
+## `packages/rag/src/retrieve.ts`
 
 Une question en entrée, des passages classés en sortie. Le fichier gagne les modes, la fusion et
 de quoi dire d'où vient chaque passage.
@@ -447,7 +453,7 @@ hostname, 9e en vectoriel, donc **hors** des 5 passages envoyés au modèle en m
   d'abord. Exemple : le 1er du vectoriel seul et le 1er du plein texte seul ont tous deux 1/61 ;
   le vectoriel sort devant.
 
-## `apps/api/src/rag/config.ts`
+## `packages/rag/src/config.ts`
 
 ### `loadSearchMode()`
 

@@ -1,6 +1,4 @@
-import { fileURLToPath } from "node:url";
-
-import { ConfigError, loadDotEnv, requireEnv } from "../config.js";
+import { ConfigError, requireEnv } from "./env.js";
 import type { EmbeddingClientOptions } from "./embeddings/index.js";
 import { SEARCH_MODES, type SearchMode } from "./retrieve.js";
 
@@ -8,10 +6,10 @@ import { SEARCH_MODES, type SearchMode } from "./retrieve.js";
  * Configuration du RAG, séparée de celle du serveur : le serveur de chat n'a
  * pas besoin de la base pour l'instant, et les scripts d'ingestion n'ont pas
  * besoin de la clé LLM. Chaque script ne demande que ce qu'il utilise.
+ *
+ * Ces fonctions lisent process.env : l'application a chargé son fichier .env
+ * avant (loadDotEnv dans env.ts).
  */
-
-/** Dossier où tu déposes les PDF à ingérer (apps/api/data/pdfs/), indépendant du répertoire courant. */
-export const PDF_DIR = fileURLToPath(new URL("../../data/pdfs/", import.meta.url));
 
 export interface DatabaseConfig {
   databaseUrl: string;
@@ -21,7 +19,6 @@ export interface DatabaseConfig {
 
 /** Config nécessaire pour parler à la base (migrations, ingestion, recherche). */
 export function loadDatabaseConfig(): DatabaseConfig {
-  loadDotEnv();
   requireEnv(["DATABASE_URL", "EMBEDDING_DIMENSION"]);
 
   return {
@@ -32,7 +29,6 @@ export function loadDatabaseConfig(): DatabaseConfig {
 
 /** Config nécessaire pour appeler le fournisseur d'embeddings. */
 export function loadEmbeddingConfig(): EmbeddingClientOptions {
-  loadDotEnv();
   requireEnv(["EMBEDDING_PROVIDER", "EMBEDDING_API_KEY", "EMBEDDING_MODEL", "EMBEDDING_DIMENSION"]);
 
   return {
@@ -48,7 +44,6 @@ export function loadEmbeddingConfig(): EmbeddingClientOptions {
  * absente, c'est "vector", le comportement d'avant la recherche hybride.
  */
 export function loadSearchMode(): SearchMode {
-  loadDotEnv();
   const raw = process.env["RAG_SEARCH_MODE"]?.trim() || "vector";
   if (!(SEARCH_MODES as readonly string[]).includes(raw)) {
     throw new ConfigError(`RAG_SEARCH_MODE doit valoir ${SEARCH_MODES.join(", ")} (reçu : "${raw}").`);

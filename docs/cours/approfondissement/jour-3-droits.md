@@ -4,19 +4,25 @@
 
 > Ce document suit le code **tel qu'il est aujourd'hui dans le dépôt**. Lis
 > d'abord le cours ; viens ici quand tu veux savoir *comment* c'est écrit.
+>
+> **Depuis [le serveur MCP](jour-4-serveur-mcp.md)**, le code commun du RAG
+> vit dans `packages/rag/` (`@chatbot/rag`). Les chemins ci-dessous sont à
+> jour ; dans les extraits, les imports et la lecture des fichiers (`.env`,
+> `users.json`, `acl.json`) ont changé : c'est désormais l'application qui
+> donne les chemins au package.
 > Chaque extrait indique son fichier : ouvre-le à côté.
 
 ## Carte des fichiers
 
 | Fichier | Rôle | Leçon du cours |
 | --- | --- | --- |
-| `apps/api/src/rag/db/migrations/003_acl.sql` | colonne `allowed_groups text[]`, refus par défaut, index GIN | 1, 3 |
-| `apps/api/src/rag/acl.ts` | `ACL_FILE`, `groupSchema`, `loadAcl` : lit et valide `acl.json` | 2, 10 |
+| `packages/rag/migrations/003_acl.sql` | colonne `allowed_groups text[]`, refus par défaut, index GIN | 1, 3 |
+| `packages/rag/src/acl.ts` | `ACL_FILE`, `groupSchema`, `loadAcl` : lit et valide `acl.json` | 2, 10 |
 | `apps/api/data/pdfs/acl.example.json`, `.gitignore` | le modèle d'ACL versionné, le vrai `acl.json` ignoré | 2 |
-| `apps/api/src/rag/db/repository.ts` | droits à l'insertion, `applyAcl`, le filtre `&&` des deux requêtes | 2, 3, 4, 5 |
+| `packages/rag/src/db/repository.ts` | droits à l'insertion, `applyAcl`, le filtre `&&` des deux requêtes | 2, 3, 4, 5 |
 | `apps/api/src/rag/scripts/ingest.ts` | ACL lue en premier, `warnAboutAcl`, `applyAcl` après la boucle | 2, 10 |
-| `apps/api/src/rag/retrieve.ts` | `userGroups` obligatoire, `[]` sans Voyage, deux branches filtrées | 0, 4, 5, 6 |
-| `apps/api/src/auth/users.ts`, `apps/api/data/users.json` | l'annuaire fictif : `loadUsers`, `requireUser` | 7, 9 |
+| `packages/rag/src/retrieve.ts` | `userGroups` obligatoire, `[]` sans Voyage, deux branches filtrées | 0, 4, 5, 6 |
+| `packages/rag/src/users.ts`, `apps/api/data/users.json` | l'annuaire fictif : `loadUsers`, `requireUser` | 7, 9 |
 | `apps/api/src/auth/fake-identity.ts` | `identifyUser` : l'en-tête `X-User-Id` (exercice seulement) | 7 |
 | `apps/api/src/routes/chat.ts` | étape 0 (401), groupes passés à `retrieve`, `userId` dans les logs | 6, 7 |
 | `apps/api/src/server.ts` | `loadUsers` au démarrage, `GET /api/users` | 7 |
@@ -50,7 +56,7 @@ chez Lumen ? ». `RAG_SEARCH_MODE=hybrid`.
 En amont, une fois : `npm run ingest` a lu `acl.json`, écrit les droits avec chaque document
 réingéré (`replaceDocument`), puis appliqué l'ACL à tous les documents (`applyAcl`).
 
-## `apps/api/src/rag/db/migrations/003_acl.sql`
+## `packages/rag/migrations/003_acl.sql`
 
 ```sql
 -- DEFAULT '{}' (tableau vide) : refus par défaut. Les documents déjà en base
@@ -81,7 +87,7 @@ CREATE INDEX documents_allowed_groups_idx ON documents USING gin (allowed_groups
 - **Refus par défaut** : juste après la migration, la recherche ne trouve plus rien pour personne.
   Un document invisible par oubli se voit tout de suite ; un document public par oubli est une fuite.
 
-## `apps/api/src/rag/acl.ts`
+## `packages/rag/src/acl.ts`
 
 ### `ACL_FILE`, `groupSchema`, `aclSchema`
 
@@ -172,7 +178,7 @@ apps/api/data/pdfs/*
 L'ACL réelle décrit des documents réels (leurs noms, qui y a accès) : elle reste locale, comme les
 PDF. L'exemple est versionné : c'est le modèle que cite la première `ConfigError`.
 
-## `apps/api/src/rag/db/repository.ts`
+## `packages/rag/src/db/repository.ts`
 
 ### `replaceDocument()` : les droits dans la transaction
 
@@ -391,7 +397,7 @@ liste vide), puis une clé de l'ACL sans PDF.
 frappe : `reglement-interieur.pdf` dans le dossier, `reglement_interieur.pdf` dans l'ACL. Les deux
 messages apparaissent alors ensemble, et le second pointe la cause.
 
-## `apps/api/src/rag/retrieve.ts`
+## `packages/rag/src/retrieve.ts`
 
 Le point de contrôle : tout ce qui cherche dans les documents passe par la fonction que renvoie
 `createRetriever`. Son commentaire d'en-tête le dit : « Ce qui sort de retrieve est autorisé ;
@@ -474,7 +480,7 @@ Et dans le `case "hybrid"` :
   les `LIMIT 20`. `fuseByRrf` reste une fonction pure sur des rangs, qui n'a pas à savoir qui
   demande.
 
-## `apps/api/src/auth/users.ts` et `apps/api/data/users.json`
+## `packages/rag/src/users.ts` et `apps/api/data/users.json`
 
 `data/users.json`, **versionné** (ce sont des personnes fictives), déclare trois utilisateurs :
 `alice` (`["rh"]`), `bruno` (`["tech"]`) et `chloe` (`["rh", "tech"]`), chacun avec un `nom`

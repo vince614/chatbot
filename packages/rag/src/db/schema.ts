@@ -1,6 +1,6 @@
 import type pg from "pg";
 
-import { ConfigError } from "../../config.js";
+import { ConfigError } from "../env.js";
 
 /**
  * Vérifie que la colonne chunks.embedding a la dimension attendue.

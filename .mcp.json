@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "chatbot-rag": {
+      "type": "stdio",
+      "command": "npm",
+      "args": ["run", "--silent", "mcp"],
+      "env": {
+        "MCP_USER_ID": "chloe"
+      }
+    }
+  }
+}

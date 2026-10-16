@@ -1,19 +1,25 @@
+import { createPool } from "@chatbot/rag/db/pool";
+import { createEmbeddingClient } from "@chatbot/rag/embeddings/index";
+import { createRetriever } from "@chatbot/rag/retrieve";
+import { loadUsers } from "@chatbot/rag/users";
 import Fastify from "fastify";
 
-import { loadUsers } from "./auth/users.js";
-import { ConfigError, loadConfig } from "./config.js";
+import {
+  ConfigError,
+  loadConfig,
+  loadDatabaseConfig,
+  loadEmbeddingConfig,
+  loadSearchMode,
+  USERS_FILE,
+} from "./config.js";
 import { createLlmClient } from "./llm/index.js";
-import { loadDatabaseConfig, loadEmbeddingConfig, loadSearchMode } from "./rag/config.js";
-import { createPool } from "./rag/db/pool.js";
-import { createEmbeddingClient } from "./rag/embeddings/index.js";
-import { createRetriever } from "./rag/retrieve.js";
 import { chatRoutes } from "./routes/chat.js";
 import { calculateTool, createToolRegistry, getCurrentDatetimeTool } from "./tools/index.js";
 
 // Le serveur refuse de démarrer si la configuration est incomplète.
 const config = loadConfigOrExit();
 // Les utilisateurs fictifs (data/users.json), lus une fois au démarrage.
-const users = await exitOnConfigError(loadUsers());
+const users = await exitOnConfigError(loadUsers(USERS_FILE));
 const llm = createLlmClient(config.llm);
 // Les outils sont déclarés ici, au démarrage : la route ne connaît que le registre.
 const tools = createToolRegistry([getCurrentDatetimeTool, calculateTool]);

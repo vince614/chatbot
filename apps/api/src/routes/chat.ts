@@ -1,11 +1,11 @@
+import type { Retrieve, RetrievedChunk } from "@chatbot/rag/retrieve";
+import type { User } from "@chatbot/rag/users";
 import type { FastifyBaseLogger, FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
 import { identifyUser } from "../auth/fake-identity.js";
-import type { User } from "../auth/users.js";
 import type { ChatMessage, ContentPart, LlmClient, LlmEvent } from "../llm/index.js";
 import { buildRagPrompt } from "../rag/prompt.js";
-import type { Retrieve, RetrievedChunk } from "../rag/retrieve.js";
 import { openSseStream, type SourceSummary } from "../sse.js";
 import type { ToolRegistry } from "../tools/index.js";
 

@@ -7,18 +7,11 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { z } from "zod";
-
-import { requireUser } from "../auth/users.js";
-import { ConfigError, loadConfig } from "../config.js";
-import { createLlmClient, type LlmClient, type LlmEffort } from "../llm/index.js";
-import { loadDatabaseConfig, loadEmbeddingConfig, loadSearchMode } from "../rag/config.js";
-import { listDocuments } from "../rag/db/repository.js";
-import { createPool } from "../rag/db/pool.js";
-import { assertEmbeddingDimension } from "../rag/db/schema.js";
-import { CHUNK_OVERLAP_RATIO, CHUNK_TARGET_TOKENS } from "../rag/document.js";
-import { createEmbeddingClient } from "../rag/embeddings/index.js";
-import { buildRagPrompt, extractCitations, RAG_SYSTEM_PROMPT } from "../rag/prompt.js";
+import { createPool } from "@chatbot/rag/db/pool";
+import { listDocuments } from "@chatbot/rag/db/repository";
+import { assertEmbeddingDimension } from "@chatbot/rag/db/schema";
+import { CHUNK_OVERLAP_RATIO, CHUNK_TARGET_TOKENS } from "@chatbot/rag/document";
+import { createEmbeddingClient } from "@chatbot/rag/embeddings/index";
 import {
   createRetriever,
   DEFAULT_K,
@@ -27,13 +20,26 @@ import {
   RRF_K,
   SEARCH_MODES,
   type SearchMode,
-} from "../rag/retrieve.js";
+} from "@chatbot/rag/retrieve";
+import { requireUser } from "@chatbot/rag/users";
+import { z } from "zod";
+
+import {
+  ConfigError,
+  loadConfig,
+  loadDatabaseConfig,
+  loadEmbeddingConfig,
+  loadSearchMode,
+  USERS_FILE,
+} from "../config.js";
+import { createLlmClient, type LlmClient, type LlmEffort } from "../llm/index.js";
+import { buildRagPrompt, extractCitations, RAG_SYSTEM_PROMPT } from "../rag/prompt.js";
 import { writeReport } from "./report.js";
 import {
   type EvalQuestion,
   pageRange,
-  questionSchema,
   QUESTIONS_FILE,
+  questionSchema,
   type RunConfig,
   type RunFile,
   runIdFromDate,
@@ -59,7 +65,7 @@ export async function executeRun(args: string[]): Promise<string | null> {
     options: { user: { type: "string" }, only: { type: "string" }, mode: { type: "string" } },
   });
   // Obligatoire, sans défaut : un run mesure ce que voit un utilisateur donné.
-  const user = await requireUser(values.user);
+  const user = await requireUser(USERS_FILE, values.user);
   // Sans --mode : celui de RAG_SEARCH_MODE, comme /chat.
   const mode = (values.mode ?? loadSearchMode()) as SearchMode;
   if (!SEARCH_MODES.includes(mode)) {
