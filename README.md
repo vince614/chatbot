@@ -320,6 +320,12 @@ Une règle commune : le reste du code ne dépend d'aucun fournisseur. On
 n'importe que `llm/index.js` (`LlmClient`, `createLlmClient`) ou
 `@chatbot/rag/embeddings/index` (`EmbeddingClient`, `createEmbeddingClient`).
 
+## Travailler avec Claude Code
+
+Les bonnes pratiques pour démarrer un projet (CLAUDE.md, une session par
+fonctionnalité, modèle de brief, autorisations, hooks, vérifications) :
+[`docs/bonnes-pratiques-claude-code.md`](docs/bonnes-pratiques-claude-code.md).
+
 ## Cours
 
 Chaque fonctionnalité est accompagnée d'un cours dans `docs/cours/`, avec un
