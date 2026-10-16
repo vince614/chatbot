@@ -2,7 +2,7 @@
   "name": "@chatbot/mcp-server",
   "private": true,
   "version": "0.1.0",
-  "description": "Le RAG exposé comme serveur MCP (transport stdio)",
+  "description": "Le RAG exposé comme serveur MCP (transports stdio et Streamable HTTP)",
   "type": "module",
   "scripts": {
     "build": "tsc -b",

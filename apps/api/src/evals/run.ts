@@ -23,7 +23,7 @@ import {
   SEARCH_MODES,
   type SearchMode,
 } from "@chatbot/rag/retrieve";
-import { requireUser } from "@chatbot/rag/users";
+import { loadUsers, requireUser } from "@chatbot/rag/users";
 import { z } from "zod";
 
 import { runConversation } from "../chat/conversation.js";
@@ -33,6 +33,7 @@ import {
   loadConfig,
   loadDatabaseConfig,
   loadEmbeddingConfig,
+  loadMcpTransport,
   loadRagMode,
   loadSearchMode,
   RAG_MODES,
@@ -114,9 +115,15 @@ export async function executeRun(args: string[]): Promise<string | null> {
   const questions = only ? allQuestions.filter((q) => only.includes(q.id)) : allQuestions;
 
   const pool = createPool(dbConfig.databaseUrl);
-  // Mode tool : le serveur MCP de l'utilisateur, avec le mode de recherche du
-  // run (sinon il prendrait celui du .env, et --mode ne servirait à rien).
-  const mcp = ragMode === "tool" ? createMcpPool({ log: mcpLog, env: { RAG_SEARCH_MODE: mode } }) : null;
+  // Mode tool : le serveur MCP de l'utilisateur (MCP_TRANSPORT, comme /chat).
+  // En stdio, il reçoit le mode de recherche du run (sinon il prendrait celui
+  // du .env, et --mode ne servirait à rien). En http, le serveur tourne déjà :
+  // c'est son RAG_SEARCH_MODE de lancement qui compte.
+  const mcpTransport = ragMode === "tool" ? await loadMcpTransport(await loadUsers(USERS_FILE)) : null;
+  if (mcpTransport?.kind === "http") {
+    console.error(`  ! MCP en http (${mcpTransport.url.href}) : la recherche suit le RAG_SEARCH_MODE du serveur, lance-le avec ${mode}.`);
+  }
+  const mcp = mcpTransport ? createMcpPool({ log: mcpLog, transport: mcpTransport, env: { RAG_SEARCH_MODE: mode } }) : null;
   try {
     await assertEmbeddingDimension(pool, dbConfig.embeddingDimension);
     const retrieve = createRetriever({ pool, embedder: createEmbeddingClient(embeddingConfig), defaultMode: mode });
@@ -136,7 +143,7 @@ export async function executeRun(args: string[]): Promise<string | null> {
       recherche:
         mode === "hybrid" ? { mode, candidats_par_recherche: HYBRID_CANDIDATES, rrf_k: RRF_K } : { mode },
       utilisateur: { id: user.id, groupes: user.groupes },
-      rag: { mode: ragMode },
+      rag: mcpTransport ? { mode: ragMode, transport: mcpTransport.kind } : { mode: ragMode },
       commit: gitCommit(),
       sha256_prompt_systeme: sha256(ragMode === "tool" ? TOOL_SYSTEM_PROMPT : RAG_SYSTEM_PROMPT),
       sha256_questions: sha256(questionsText),

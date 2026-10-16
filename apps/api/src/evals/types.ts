@@ -51,7 +51,11 @@ export interface RunConfig {
    * Comment le modèle accède aux documents (RAG_MODE). Absent dans les runs
    * antérieurs au client MCP : ils cherchaient tous systématiquement (always).
    */
-  rag?: { mode: "always" | "tool" };
+  rag?: {
+    mode: "always" | "tool";
+    /** Mode tool : comment l'évaluation a joint le serveur MCP. Absent avant le transport HTTP (= stdio). */
+    transport?: "stdio" | "http";
+  };
   /** Commit Git du code, avec « -modifie » si des fichiers n'étaient pas commités. */
   commit: string;
   /** Empreintes : un prompt ou des questions modifiés rendent deux runs incomparables. */
@@ -96,4 +100,10 @@ export function runIdFromDate(date: Date): string {
 /** Pages couvertes par un chunk : [2, 3] pour « p. 2–3 ». */
 export function pageRange(pageStart: number, pageEnd: number): number[] {
   return Array.from({ length: pageEnd - pageStart + 1 }, (_, i) => pageStart + i);
+}
+
+/** « always », « tool » (stdio) ou « tool/http » : comment le run a cherché, pour les rapports et l'historique. */
+export function ragLabel(rag: RunConfig["rag"]): string {
+  if (!rag) return "always";
+  return rag.mode === "tool" && rag.transport === "http" ? "tool/http" : rag.mode;
 }

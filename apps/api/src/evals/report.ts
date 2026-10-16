@@ -1,6 +1,6 @@
 import { access, writeFile } from "node:fs/promises";
 
-import type { EvalQuestion, RunFile, RunResult, Source } from "./types.js";
+import { type EvalQuestion, ragLabel, type RunFile, type RunResult, type Source } from "./types.js";
 
 /**
  * Le rapport à noter à la main : pour chaque question, l'attendu et l'obtenu
@@ -45,7 +45,7 @@ export function renderReport(runId: string, run: RunFile, questions: EvalQuestio
     "",
     `Modèle ${config.llm.modele} (effort ${config.llm.effort}) · embeddings ${config.embeddings.modele} ·`,
     `chunks de ${config.decoupage.tokens_par_chunk} tokens (recouvrement ${config.decoupage.recouvrement * 100} %) ·`,
-    `RAG ${config.rag?.mode ?? "always"} · recherche ${config.recherche?.mode ?? "vector"} · utilisateur ${config.utilisateur?.id ?? "(avant les droits)"} · ` +
+    `RAG ${ragLabel(config.rag)} · recherche ${config.recherche?.mode ?? "vector"} · utilisateur ${config.utilisateur?.id ?? "(avant les droits)"} · ` +
       `k = ${config.k} · commit ${config.commit}`,
     "",
     "## Comment noter",

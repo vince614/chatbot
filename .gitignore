@@ -22,3 +22,6 @@ apps/api/evals/runs/
 
 # Builds TypeScript incrémentaux (tsc -b)
 *.tsbuildinfo
+
+# Jetons du serveur MCP en HTTP : seul l'exemple est versionné
+apps/api/data/mcp-tokens.json

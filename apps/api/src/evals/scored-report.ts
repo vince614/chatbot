@@ -2,7 +2,7 @@ import { writeFile } from "node:fs/promises";
 
 import { renderQuestion } from "./report.js";
 import { CRITERIA, formatTotal, type ScoresFile } from "./scoring.js";
-import { type EvalQuestion, type RunFile, RUNS_DIR } from "./types.js";
+import { type EvalQuestion, ragLabel, type RunFile, RUNS_DIR } from "./types.js";
 
 /**
  * Le rapport de npm run eval (<run>.md) : les totaux d'abord, puis les échecs
@@ -34,7 +34,7 @@ function renderScoredReport(run: RunFile, scores: ScoresFile, questions: EvalQue
     `# Run ${scores.run}`,
     "",
     `Modèle ${config.llm.modele} (effort ${config.llm.effort}) · juge ${scores.juge.modele} (grille ${scores.juge.grille}) ·`,
-    `embeddings ${config.embeddings.modele} · RAG ${config.rag?.mode ?? "always"} · recherche ${config.recherche?.mode ?? "vector"} · k = ${config.k} ·`,
+    `embeddings ${config.embeddings.modele} · RAG ${ragLabel(config.rag)} · recherche ${config.recherche?.mode ?? "vector"} · k = ${config.k} ·`,
     `chunks de ${config.decoupage.tokens_par_chunk} tokens · utilisateur ${config.utilisateur?.id ?? "—"} · commit ${config.commit}`,
     "",
     "## Scores",

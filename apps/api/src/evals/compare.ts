@@ -4,7 +4,7 @@
 // attendues de questions.json.
 import { loadQuestions, loadRun } from "./files.js";
 import { expectedRanks, gradeRecherche, TOP } from "./graders/recherche.js";
-import { type EvalQuestion, QUESTION_TYPES, type RunFile, type Source } from "./types.js";
+import { type EvalQuestion, QUESTION_TYPES, ragLabel, type RunFile, type Source } from "./types.js";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -21,7 +21,7 @@ async function main(): Promise<void> {
   console.log("Runs");
   runs.forEach(({ id, run }, i) => {
     console.log(
-      `  ${labels[i]}  ${id}  RAG ${(run.config.rag?.mode ?? "always").padEnd(6)}  recherche ${modeOf(run).padEnd(7)}  ` +
+      `  ${labels[i]}  ${id}  RAG ${ragLabel(run.config.rag).padEnd(10)}  recherche ${modeOf(run).padEnd(7)}  ` +
         `utilisateur ${(run.config.utilisateur?.id ?? "—").padEnd(6)}  commit ${run.config.commit}`,
     );
   });

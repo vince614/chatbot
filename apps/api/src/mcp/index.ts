@@ -1,5 +1,12 @@
 // Point d'entrée public du client MCP.
-export { createMcpPool, type McpLogger, type McpPool, type McpPoolOptions, McpUnavailableError } from "./pool.js";
+export {
+  createMcpPool,
+  type McpLogger,
+  type McpPool,
+  type McpPoolOptions,
+  type McpTransportConfig,
+  McpUnavailableError,
+} from "./pool.js";
 export {
   type FormatMcpResult,
   loadMcpTools,

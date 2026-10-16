@@ -1,6 +1,6 @@
 # Jour 4 · Cours 3 — L'API, client MCP
 
-> [Sommaire](README.md) · Précédent : [Jour 4 · Cours 2 — Le serveur MCP](jour-4-serveur-mcp.md) · [Approfondissement : le code](approfondissement/jour-4-client-mcp.md)
+> [Sommaire](README.md) · Précédent : [Jour 4 · Cours 2 — Le serveur MCP](jour-4-serveur-mcp.md) · Suivant : [Jour 4 · Cours 4 — Le serveur MCP distant](jour-4-serveur-distant.md) · [Approfondissement : le code](approfondissement/jour-4-client-mcp.md)
 
 > **Prérequis.** [Le tool use](jour-1-appel-doutils.md) (registre, boucle),
 > [la réponse sourcée](jour-2-recherche-reponse.md) (`buildRagPrompt`,
@@ -333,7 +333,7 @@ npm run eval:history          # colonne rag
 
 ### Pour aller plus loin (non fait, volontairement)
 
-Transport HTTP (un serveur partagé, l'identité dans un jeton par requête),
+Transport HTTP (un serveur partagé, l'identité dans un jeton par requête : [cours suivant](jour-4-serveur-distant.md)),
 resources et prompts MCP, persistance des conversations avec leurs
 résultats d'outils, tests automatisés, questions de suivi dans le jeu de
 test, recherche forcée au premier tour (`tool_choice`) si l'on veut garder

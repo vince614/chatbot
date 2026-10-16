@@ -9,6 +9,7 @@ import {
   loadConfig,
   loadDatabaseConfig,
   loadEmbeddingConfig,
+  loadMcpTransport,
   loadRagMode,
   loadSearchMode,
   USERS_FILE,
@@ -38,10 +39,12 @@ const retrieve = createRetriever({
 
 // Le logger par défaut trace méthode, URL et statut : jamais le corps des requêtes.
 const app = Fastify({ logger: true });
-// Les serveurs MCP (un sous-processus par utilisateur), démarrés au premier
-// message de chacun. Rien n'est lancé ici : un serveur MCP en panne
-// n'empêche pas l'API de démarrer.
-const mcp = createMcpPool({ log: app.log });
+// Les connexions MCP, une par utilisateur, ouvertes au premier message de
+// chacun : un sous-processus (stdio) ou une session sur le serveur HTTP, avec
+// le jeton de l'utilisateur (MCP_TRANSPORT). Rien n'est ouvert ici : un
+// serveur MCP en panne n'empêche pas l'API de démarrer.
+const mcpTransport = await exitOnConfigError(loadMcpTransport(users));
+const mcp = createMcpPool({ log: app.log, transport: mcpTransport });
 // À l'arrêt du serveur, on ferme proprement les connexions à la base et les sous-processus.
 app.addHook("onClose", async () => {
   const [, closed] = await Promise.all([pool.end(), mcp.close()]);
@@ -72,7 +75,10 @@ await app.register(
 );
 
 await app.listen({ port: config.port, host: "127.0.0.1" });
-app.log.info({ ragMode: config.ragMode }, "mode de recherche documentaire");
+app.log.info(
+  { ragMode: config.ragMode, mcpTransport: mcpTransport.kind, ...(mcpTransport.kind === "http" ? { mcpUrl: mcpTransport.url.href } : {}) },
+  "mode de recherche documentaire",
+);
 
 async function exitOnConfigError<T>(promise: Promise<T>): Promise<T> {
   try {

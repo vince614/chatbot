@@ -22,7 +22,7 @@ async function main(): Promise<void> {
 
   const columns: [string, number, (l: HistoryLine) => string][] = [
     ["run", 19, (l) => l.run],
-    ["rag", 6, (l) => l.config.rag ?? "always"],
+    ["rag", 10, (l) => l.config.rag ?? "always"],
     ["recherche", 9, (l) => l.config.recherche],
     ["util.", 6, (l) => l.config.utilisateur],
     ["modèle", 16, (l) => l.config.modele],

@@ -5,7 +5,7 @@ npm workspaces.
 
 - `apps/api` : backend Node 20+ / Fastify / TypeScript strict
 - `apps/web` : frontend React / Vite / TypeScript strict
-- `apps/mcp-server` : le RAG exposé comme serveur MCP (stdio)
+- `apps/mcp-server` : le RAG exposé comme serveur MCP (stdio ou Streamable HTTP)
 - `packages/rag` : le RAG partagé (`@chatbot/rag`) : ingestion, base,
   embeddings, recherche, droits d'accès
 
@@ -27,7 +27,10 @@ Fonctionnalités en place :
   lancement ;
 - **l'API, client MCP** : par défaut (`RAG_MODE=tool`), c'est le modèle qui
   décide d'appeler `search_documents`, à travers un serveur MCP lancé pour
-  chaque utilisateur ; `RAG_MODE=always` cherche avant chaque message.
+  chaque utilisateur ; `RAG_MODE=always` cherche avant chaque message ;
+- **serveur MCP distant** : le même serveur en Streamable HTTP sur
+  127.0.0.1, protégé par un jeton par utilisateur ; l'API s'y connecte avec
+  `MCP_TRANSPORT=http`.
 
 ## Installation
 
@@ -160,6 +163,7 @@ refuse de démarrer.
 
 ```bash
 npm run --silent mcp                     # compile puis lance le serveur (attend un client sur stdin)
+npm run --silent mcp -- --transport http # serveur HTTP sur http://127.0.0.1:3100/mcp (MCP_HTTP_PORT)
 npx @modelcontextprotocol/inspector -e MCP_USER_ID=chloe npm run --silent mcp   # MCP Inspector (interface web)
 npx @modelcontextprotocol/inspector --cli --config .mcp.json --server chatbot-rag --method tools/list
 ```
@@ -186,6 +190,36 @@ de l'API (Ctrl+C, SIGTERM), tous les serveurs MCP sont fermés. Les logs
 donnent l'outil, l'utilisateur et la durée, jamais la question ni les
 extraits.
 
+### Le serveur en HTTP
+
+`npm run --silent mcp -- --transport http` lance **un seul** serveur pour
+tous les utilisateurs, sur `http://127.0.0.1:3100/mcp` (transport Streamable
+HTTP du SDK officiel). `GET /health` répond `{"status":"ok"}` sans
+authentification ; toute requête sur `/mcp` exige
+`Authorization: Bearer <jeton>` (sinon 401). Les jetons vivent dans
+`apps/api/data/mcp-tokens.json` (ignoré par git), un par utilisateur :
+
+```bash
+cp apps/api/data/mcp-tokens.example.json apps/api/data/mcp-tokens.json
+# remplacer chaque clé par la sortie de : openssl rand -hex 32
+```
+
+L'utilisateur vient du jeton (`MCP_USER_ID` n'est pas lu en HTTP) et est
+attaché à la session MCP à sa création : une requête portant un autre jeton
+sur cette session reçoit un 403. Les jetons sont comparés en temps constant
+et n'apparaissent jamais dans les logs. Jeton statique d'exercice : pas
+d'OAuth, pas de TLS, écoute sur la machine locale seulement (voir le cours).
+
+```bash
+npx @modelcontextprotocol/inspector --cli http://127.0.0.1:3100/mcp --transport http \
+  --header "Authorization: Bearer <jeton>" --method tools/list
+MCP_TRANSPORT=http npm run mcp:probe -- --user chloe   # le client de l'API, en HTTP
+```
+
+Côté API, `MCP_TRANSPORT=http` remplace les sous-processus par une session
+HTTP par utilisateur, avec son jeton ; le reste (`/chat`, outils,
+événements, évaluation) ne change pas.
+
 Pour arrêter la base : `docker compose down` (les données restent dans le
 volume), ou `docker compose down -v` pour tout effacer.
 
@@ -211,7 +245,10 @@ le chat renvoie alors une erreur « recherche indisponible ».
 | `EMBEDDING_DIMENSION` | Dimension des vecteurs (256, 512, 1024 ou 2048). Figée dans la colonne SQL à la migration. | `1024` |
 | `RAG_SEARCH_MODE` | Recherche par défaut : `vector`, `lexical` ou `hybrid`. Optionnelle (`vector` si absente). | `vector` |
 | `RAG_MODE` | `tool` : le modèle décide d'appeler `search_documents` (serveur MCP) ; `always` : recherche avant chaque message. Optionnelle (`tool` si absente). | `tool` |
-| `MCP_USER_ID` | Utilisateur du serveur MCP (`data/users.json`). Passée par le client MCP (`.mcp.json`, Inspector), pas dans `.env`. | `chloe` |
+| `MCP_TRANSPORT` | Comment l'API joint le serveur MCP : `stdio` (un sous-processus par utilisateur) ou `http`. Optionnelle (`stdio` si absente). | `stdio` |
+| `MCP_HTTP_URL` | Adresse du serveur MCP en HTTP, pour l'API. Optionnelle. | `http://127.0.0.1:3100/mcp` |
+| `MCP_HTTP_PORT` | Port du serveur MCP lancé avec `--transport http` (écoute sur 127.0.0.1). Optionnelle. | `3100` |
+| `MCP_USER_ID` | Utilisateur du serveur MCP (`data/users.json`). Passée par le client MCP (`.mcp.json`, Inspector), pas dans `.env`. Ignorée en HTTP. | `chloe` |
 | `EVAL_JUDGE_MODEL` | Modèle juge de l'exactitude (`npm run eval`), distinct de `LLM_MODEL` et acceptant `temperature: 0`. Optionnelle. | `claude-haiku-4-5` |
 
 Les clés ne sont jamais exposées au front : Vite ne publie que les variables
@@ -227,6 +264,7 @@ ne sont pas comparables.
 packages/rag/                @chatbot/rag, partagé par l'API et le serveur MCP
 ├─ src/retrieve.ts           createRetriever → retrieve(question, { userGroups, k, mode })
 ├─ src/acl.ts, users.ts      droits par document, utilisateurs fictifs (chemins donnés par l'application)
+├─ src/mcp-tokens.ts         jetons du serveur MCP en HTTP (data/mcp-tokens.json)
 ├─ src/config.ts, env.ts     configuration lue dans process.env, ConfigError, loadDotEnv(fichier)
 ├─ src/pdf/, text/           extraction, nettoyage, découpage (fonctions pures)
 ├─ src/embeddings/           EmbeddingClient + fabrique ; seul voyage.ts connaît l'API Voyage
@@ -237,7 +275,7 @@ apps/api/src/
 ├─ routes/chat.ts            POST /api/chat : identité, mode always ou tool, sources, flux SSE
 ├─ chat/conversation.ts      boucle modèle ↔ outils (partagée par /chat et l'évaluation)
 ├─ chat/search-results.ts    résultats de search_documents → extraits numérotés, sources
-├─ mcp/                      client MCP : un serveur par utilisateur (pool), outils MCP → registre, mcp:probe
+├─ mcp/                      client MCP : une connexion par utilisateur (stdio ou http), outils MCP → registre, mcp:probe
 ├─ auth/fake-identity.ts     X-User-Id, remplaçant d'authentification
 ├─ llm/                      LlmClient + fabrique ; seul anthropic.ts importe le SDK
 ├─ tools/                    registre d'outils (Zod ou JSON Schema, délai par outil, erreurs → résultat)
@@ -245,8 +283,11 @@ apps/api/src/
 ├─ rag/scripts/              migrate, preview, embed-check, ingest, search, ask, sample-pdf
 └─ evals/                    run, graders (code + juge), scores, rapport, historique, calibration, comparaison
 apps/mcp-server/src/
-├─ index.ts                  config → base → McpServer + outils → transport stdio
-├─ config.ts, log.ts         MCP_USER_ID, .env de l'API ; logs sur stderr uniquement
+├─ index.ts                  config → base → --transport stdio|http
+├─ server.ts                 createRagServer(context) : McpServer + les 2 outils
+├─ transports/               stdio ; http (/mcp, /health, Host/Origin, jeton, sessions) ; journal des appels d'outils
+├─ auth.ts                   jeton → utilisateur, en temps constant
+├─ config.ts, log.ts         MCP_USER_ID ou jetons, .env de l'API ; logs sur stderr uniquement
 └─ tools/                    search_documents, list_documents, runTool (erreur → isError)
 apps/web/src/chat/           UI du chat, hook useChat, parseur SSE, citations et sources, journal d'événements
 ```
@@ -273,3 +314,4 @@ appuyées sur le code, questions et corrigé.
 | `docs/cours/jour-4-evaluation.md` | Jour 4 · L'évaluation automatique : graders par code, juge LLM calibré, commande unique, historique |
 | `docs/cours/jour-4-serveur-mcp.md` | Jour 4 · Le serveur MCP : package partagé, stdio, identité fixée au lancement, outils, Inspector, `.mcp.json` |
 | `docs/cours/jour-4-client-mcp.md` | Jour 4 · L'API, client MCP : un serveur par utilisateur, le modèle décide de chercher, panne du serveur, comparaison des deux modes |
+| `docs/cours/jour-4-serveur-distant.md` | Jour 4 · Le serveur MCP distant : Streamable HTTP, sessions, jeton par requête, OAuth 2.1 expliqué, client HTTP dans l'API |

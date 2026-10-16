@@ -17,6 +17,7 @@ dans l'ordre : chacun part de l'état du code laissé par le précédent.
 | 4 | 1 | [L'évaluation automatique](jour-4-evaluation.md) | Graders par code, juge LLM et calibration, `npm run eval`, historique des scores | [approfondissement](approfondissement/jour-4-evaluation.md) |
 | 4 | 2 | [Le serveur MCP](jour-4-serveur-mcp.md) | Package `@chatbot/rag` partagé, serveur stdio, identité fixée au lancement, `search_documents` et `list_documents`, Inspector, `.mcp.json` | [approfondissement](approfondissement/jour-4-serveur-mcp.md) |
 | 4 | 3 | [L'API, client MCP](jour-4-client-mcp.md) | Un serveur MCP par utilisateur, outils MCP dans le registre, le modèle décide de chercher (`RAG_MODE`), résultats numérotés, panne du serveur, évaluation des deux modes | [approfondissement](approfondissement/jour-4-client-mcp.md) |
+| 4 | 4 | [Le serveur MCP distant](jour-4-serveur-distant.md) | Transport Streamable HTTP, sessions, jeton par requête en temps constant, identité liée à la session, OAuth 2.1 (expliqué), client HTTP dans l'API | [approfondissement](approfondissement/jour-4-serveur-distant.md) |
 
 ## La trame commune
 

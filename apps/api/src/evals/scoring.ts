@@ -2,7 +2,7 @@ import { appendFile, writeFile } from "node:fs/promises";
 
 import { CODE_GRADERS, type Grade } from "./graders/index.js";
 import { type Judge, JUDGE_PROMPT_VERSION } from "./graders/exactitude.js";
-import { EVALS_DIR, type EvalQuestion, QUESTION_TYPES, type RunFile, RUNS_DIR } from "./types.js";
+import { EVALS_DIR, type EvalQuestion, QUESTION_TYPES, ragLabel, type RunFile, RUNS_DIR } from "./types.js";
 
 /**
  * Toutes les notes d'un run : les graders par code, puis le juge. Écrit
@@ -122,7 +122,7 @@ export async function appendHistory(run: RunFile, scores: ScoresFile): Promise<v
       grille: scores.juge.grille,
       embeddings: `${config.embeddings.modele} (${config.embeddings.dimension})`,
       recherche: config.recherche?.mode ?? "vector",
-      rag: config.rag?.mode ?? "always",
+      rag: ragLabel(config.rag),
       k: config.k,
       tokens_par_chunk: config.decoupage.tokens_par_chunk,
       utilisateur: config.utilisateur?.id ?? "—",

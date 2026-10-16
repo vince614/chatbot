@@ -65,6 +65,11 @@ chloe envoie « Qui est la référente télétravail ? » depuis l'interface, `R
 
 ## `apps/api/src/mcp/pool.ts`
 
+> Depuis le [cours 4](jour-4-serveur-distant.md), `pool.ts` sait aussi se connecter en HTTP.
+> Les extraits ci-dessous montrent l'état du code à la fin du cours 3 (stdio). Les noms ont
+> un peu bougé depuis : `connection.pid` est devenu `connection.tag` (`{ mcpPid }`), et les
+> messages de log sont rangés dans `MESSAGES.stdio`. La logique décrite ici n'a pas changé.
+
 ### L'interface `McpPool`
 
 ```ts

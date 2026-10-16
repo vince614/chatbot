@@ -4,9 +4,9 @@
 // MCP), puis appelle search_documents à travers le registre.
 import { parseArgs } from "node:util";
 
-import { requireUser } from "@chatbot/rag/users";
+import { loadUsers, requireUser } from "@chatbot/rag/users";
 
-import { ConfigError, USERS_FILE } from "../config.js";
+import { ConfigError, loadMcpTransport, USERS_FILE } from "../config.js";
 import { calculateTool, createToolRegistry, getCurrentDatetimeTool } from "../tools/index.js";
 import { createMcpPool, loadMcpTools, MCP_TOOL_PREFIX, type McpLogger } from "./index.js";
 
@@ -26,7 +26,10 @@ async function main(): Promise<void> {
   const user = await requireUser(USERS_FILE, values.user);
   const question = positionals.join(" ").trim() || DEFAULT_QUESTION;
 
-  const pool = createMcpPool({ log });
+  // MCP_TRANSPORT : un sous-processus (stdio) ou une session sur le serveur HTTP.
+  const transport = await loadMcpTransport(await loadUsers(USERS_FILE));
+  console.log(`Transport MCP : ${transport.kind}${transport.kind === "http" ? ` (${transport.url.href})` : ""}\n`);
+  const pool = createMcpPool({ log, transport });
   try {
     // 1. Démarrage du serveur et liste des outils : le premier appel paie le démarrage.
     let startedAt = performance.now();

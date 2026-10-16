@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { CallToolResult, Tool as McpTool } from "@modelcontextprotocol/sdk/types.js";
 
 /** Le sous-ensemble du logger Fastify (pino) dont ce module a besoin. */
@@ -12,39 +13,51 @@ export interface McpLogger {
   warn(details: object, message: string): void;
 }
 
+/**
+ * Comment joindre le serveur MCP d'un utilisateur.
+ *  - stdio : un sous-processus par utilisateur, lancé avec MCP_USER_ID ;
+ *  - http : une session par utilisateur sur un serveur déjà lancé, avec le
+ *    jeton de cet utilisateur (userId → jeton).
+ */
+export type McpTransportConfig =
+  | { kind: "stdio" }
+  | { kind: "http"; url: URL; tokens: ReadonlyMap<string, string> };
+
 export interface McpPoolOptions {
   log: McpLogger;
-  /** Un sous-processus sans appel depuis ce délai est fermé. */
+  /** stdio par défaut. */
+  transport?: McpTransportConfig;
+  /** Une connexion sans appel depuis ce délai est fermée. */
   idleMs?: number;
-  /** Après un plantage ou un démarrage raté, délai avant de relancer le serveur de cet utilisateur. */
+  /** Après une panne ou un démarrage raté, délai avant de réessayer pour cet utilisateur. */
   retryDelayMs?: number;
-  /** Variables ajoutées à l'environnement du serveur (l'évaluation y fixe RAG_SEARCH_MODE). */
+  /** stdio : variables ajoutées à l'environnement du serveur (l'évaluation y fixe RAG_SEARCH_MODE). */
   env?: Record<string, string>;
 }
 
-/** Le serveur MCP de cet utilisateur est arrêté et ne sera pas relancé avant la fin du délai. */
+/** Le serveur MCP de cet utilisateur est injoignable, et on ne réessaiera pas avant la fin du délai. */
 export class McpUnavailableError extends Error {
   override readonly name = "McpUnavailableError";
 }
 
 /**
- * Les serveurs MCP des utilisateurs, un sous-processus chacun. Les appelants
- * ne voient jamais de sous-processus : ils demandent « les outils de bruno »
- * ou « appelle cet outil pour bruno », et le pool démarre, réutilise ou
- * relance le serveur de bruno.
+ * Les serveurs MCP des utilisateurs, une connexion chacun. Les appelants ne
+ * voient jamais ni sous-processus ni session HTTP : ils demandent « les
+ * outils de bruno » ou « appelle cet outil pour bruno », et le pool ouvre,
+ * réutilise ou rouvre la connexion de bruno.
  *
  * userId doit être un utilisateur déjà résolu dans users.json : le pool
- * lance un serveur pour l'identifiant qu'on lui donne, sans vérifier.
+ * se connecte pour l'identifiant qu'on lui donne, sans vérifier.
  */
 export interface McpPool {
   /** Les outils du serveur, tels qu'il les déclare (noms non préfixés). */
   listTools(userId: string): Promise<McpTool[]>;
   callTool(userId: string, name: string, args: unknown, signal?: AbortSignal): Promise<CallToolResult>;
-  /** Ferme tous les sous-processus et renvoie leur nombre. Un appel suivant en relance un. */
+  /** Ferme toutes les connexions et renvoie leur nombre. Un appel suivant en rouvre une. */
   close(): Promise<number>;
 }
 
-/** Cinq minutes : assez pour une conversation, sans garder un processus par visiteur d'hier. */
+/** Cinq minutes : assez pour une conversation, sans garder une connexion par visiteur d'hier. */
 const DEFAULT_IDLE_MS = 5 * 60_000;
 /**
  * 30 secondes : assez pour qu'un serveur qui plante au démarrage (base
@@ -52,6 +65,14 @@ const DEFAULT_IDLE_MS = 5 * 60_000;
  * panne passagère se répare seule.
  */
 const DEFAULT_RETRY_DELAY_MS = 30_000;
+/**
+ * Le SDK coupe toute requête au bout de 60 s par défaut, sans regarder notre
+ * signal. Le vrai délai est celui du registre (15 s pour /chat, 120 s pour
+ * l'évaluation), qui annule par le signal : on recule donc celui du SDK pour
+ * qu'il ne passe jamais avant. Sans cela, une recherche qui attend le quota de
+ * Voyage plus de 60 s échouait en « serveur indisponible ».
+ */
+const SDK_REQUEST_TIMEOUT_MS = 10 * 60_000;
 
 /** Le point d'entrée du serveur MCP, en TypeScript : il est lancé par tsx, sans build. */
 const SERVER_ENTRY = fileURLToPath(new URL("../../../mcp-server/src/index.ts", import.meta.url));
@@ -59,34 +80,58 @@ const SERVER_DIR = fileURLToPath(new URL("../../../mcp-server/", import.meta.url
 /** Le chargeur de tsx, résolu depuis apps/api (où tsx est installé). */
 const TSX_LOADER = import.meta.resolve("tsx");
 
-/** Un sous-processus vivant et le client MCP qui lui parle. */
+/** Les messages de log de chaque transport : en stdio, ceux d'avant (voir jour-4-client-mcp). */
+const MESSAGES = {
+  stdio: {
+    opened: "serveur MCP démarré",
+    closed: "serveur MCP fermé",
+    idle: "serveur MCP inactif, fermeture",
+    failed: "le serveur MCP n'a pas pu démarrer",
+  },
+  http: {
+    opened: "session MCP ouverte",
+    closed: "session MCP fermée",
+    idle: "session MCP inactive, fermeture",
+    failed: "le serveur MCP n'a pas pu être joint",
+  },
+} as const;
+
+/** Une connexion ouverte et le client MCP qui l'utilise. */
 interface Connection {
   client: Client;
-  pid: number | null;
-  /** Appels en cours : on ne ferme jamais un serveur qui travaille. */
+  /** Ce qui l'identifie dans les logs : { mcpPid } en stdio, { mcpSession } (tronqué) en http. */
+  tag: Record<string, unknown>;
+  /** http : met fin à la session côté serveur (DELETE) avant de fermer. */
+  terminate: (() => Promise<void>) | null;
+  /** Vrai une fois la poignée de main faite. */
+  connected: boolean;
+  /** Retire cette connexion du cache (sans effet si une plus récente l'a remplacée). */
+  evict: () => void;
+  /** Appels en cours : on ne ferme jamais une connexion qui travaille. */
   active: number;
   idleTimer: NodeJS.Timeout | null;
   /** La liste des outils ne change pas pendant la vie du serveur : demandée une fois. */
   tools: Promise<McpTool[]> | null;
-  /** Vrai quand c'est nous qui fermons (inactivité, arrêt) : ce n'est pas un plantage. */
+  /** Vrai quand c'est nous qui fermons (inactivité, arrêt, panne constatée) : onclose n'a rien à ajouter. */
   closing: boolean;
 }
 
 export function createMcpPool({
   log,
+  transport: transportConfig = { kind: "stdio" },
   idleMs = DEFAULT_IDLE_MS,
   retryDelayMs = DEFAULT_RETRY_DELAY_MS,
   env = {},
 }: McpPoolOptions): McpPool {
   // La promesse, pas la connexion : deux requêtes simultanées de bruno
-  // attendent le même démarrage au lieu de lancer deux serveurs.
+  // attendent la même connexion au lieu d'en ouvrir deux.
   const connections = new Map<string, Promise<Connection>>();
   // Le disjoncteur : utilisateur → date de la dernière panne de son serveur.
   const failedAt = new Map<string, number>();
+  const messages = MESSAGES[transportConfig.kind];
 
-  /** onClosed : appelé quand ce serveur s'arrête, pour le retirer du cache. */
-  async function connect(userId: string, onClosed: () => void): Promise<Connection> {
-    const startedAt = performance.now();
+  /** stdio : le sous-processus de cet utilisateur, son identité dans l'environnement. */
+  function stdioTransport(userId: string): StdioClientTransport {
     const transport = new StdioClientTransport({
       command: process.execPath,
       // --conditions=development : @chatbot/rag se résout vers ses sources, comme pour l'API.
@@ -104,39 +149,76 @@ export function createMcpPool({
         log.info({ mcpUser: userId }, line.replace(/^\[mcp\] /, "serveur MCP : ")),
       );
     }
+    return transport;
+  }
 
+  /** http : une session sur le serveur partagé, son identité dans le jeton de chaque requête. */
+  function httpTransport(url: URL, token: string): StreamableHTTPClientTransport {
+    // Le SDK ajoute ces en-têtes à chaque requête : POST, GET du flux, DELETE.
+    return new StreamableHTTPClientTransport(url, { requestInit: { headers: { Authorization: `Bearer ${token}` } } });
+  }
+
+  /** onClosed : appelé quand la connexion se ferme, pour la retirer du cache. */
+  async function connect(userId: string, onClosed: () => void): Promise<Connection> {
+    const startedAt = performance.now();
     const client = new Client({ name: "chatbot-api", version: "0.1.0" });
-    const connection: Connection = { client, pid: null, active: 0, idleTimer: null, tools: null, closing: false };
+    const connection: Connection = {
+      client,
+      tag: {},
+      terminate: null,
+      connected: false,
+      evict: onClosed,
+      active: 0,
+      idleTimer: null,
+      tools: null,
+      closing: false,
+    };
 
-    // Fermeture voulue (inactivité, arrêt) ou plantage : dans les deux cas, ce
-    // serveur ne sert plus et sort du cache. Un plantage arme en plus le
-    // disjoncteur. Les appels en cours sont rejetés par le SDK (« Connection closed »).
+    // Fermeture voulue (inactivité, arrêt) ou plantage : dans les deux cas, cette
+    // connexion ne sert plus et sort du cache. En stdio, un plantage du
+    // sous-processus arrive ici et arme le disjoncteur. En http, rien n'arrive
+    // ici quand le serveur tombe : c'est l'appel suivant qui échoue (voir use).
     client.onclose = () => {
       if (connection.idleTimer) clearTimeout(connection.idleTimer);
       onClosed();
       if (connection.closing) {
-        log.info({ mcpUser: userId, mcpPid: connection.pid }, "serveur MCP fermé");
-      } else if (connection.pid !== null) {
+        log.info({ mcpUser: userId, ...connection.tag }, messages.closed);
+      } else if (connection.connected) {
         failedAt.set(userId, Date.now());
-        log.warn({ mcpUser: userId, mcpPid: connection.pid, retryInMs: retryDelayMs }, "serveur MCP arrêté de façon inattendue");
+        log.warn({ mcpUser: userId, ...connection.tag, retryInMs: retryDelayMs }, "serveur MCP arrêté de façon inattendue");
       }
     };
 
-    // connect() lance le sous-processus puis fait la poignée de main
-    // (initialize). Un serveur qui refuse de démarrer (MCP_USER_ID inconnu,
-    // base arrêtée) ferme son stdout : connect() rejette.
+    // connect() lance le sous-processus (stdio) ou envoie le premier POST
+    // (http), puis fait la poignée de main (initialize). Un serveur qui refuse
+    // (MCP_USER_ID inconnu, base arrêtée, jeton refusé, port fermé) : rejet.
     try {
-      await client.connect(transport);
+      if (transportConfig.kind === "stdio") {
+        const transport = stdioTransport(userId);
+        await client.connect(transport);
+        connection.tag = { mcpPid: transport.pid };
+      } else {
+        const token = transportConfig.tokens.get(userId);
+        if (token === undefined) throw new Error("aucun jeton MCP pour cet utilisateur (data/mcp-tokens.json)");
+        const transport = httpTransport(transportConfig.url, token);
+        await client.connect(transport);
+        connection.tag = { mcpSession: transport.sessionId?.slice(0, 8) };
+        connection.terminate = () => transport.terminateSession();
+      }
     } catch (error) {
       failedAt.set(userId, Date.now());
-      // La raison exacte est déjà dans les logs : c'est la dernière ligne stderr du serveur.
-      log.warn({ mcpUser: userId, retryInMs: retryDelayMs }, "le serveur MCP n'a pas pu démarrer");
-      throw new McpUnavailableError("Le serveur MCP n'a pas pu démarrer.", { cause: error });
+      // La raison exacte : en stdio, la dernière ligne stderr du serveur est déjà
+      // dans les logs ; en http, le message d'erreur (statut HTTP, connexion refusée).
+      log.warn(
+        { mcpUser: userId, retryInMs: retryDelayMs, ...(transportConfig.kind === "http" ? { reason: describe(error) } : {}) },
+        messages.failed,
+      );
+      throw new McpUnavailableError("Le serveur MCP n'a pas pu être joint.", { cause: error });
     }
-    connection.pid = transport.pid;
+    connection.connected = true;
     log.info(
-      { mcpUser: userId, mcpPid: connection.pid, durationMs: Math.round(performance.now() - startedAt) },
-      "serveur MCP démarré",
+      { mcpUser: userId, ...connection.tag, durationMs: Math.round(performance.now() - startedAt) },
+      messages.opened,
     );
     armIdleTimer(userId, connection);
     return connection;
@@ -146,7 +228,7 @@ export function createMcpPool({
     const existing = connections.get(userId);
     if (existing) return existing;
 
-    // Disjoncteur ouvert : on ne relance pas un serveur qui vient de tomber.
+    // Disjoncteur ouvert : on ne réessaie pas un serveur qui vient de tomber.
     const lastFailure = failedAt.get(userId);
     if (lastFailure !== undefined && Date.now() - lastFailure < retryDelayMs) {
       const seconds = Math.ceil((retryDelayMs - (Date.now() - lastFailure)) / 1000);
@@ -167,28 +249,65 @@ export function createMcpPool({
     return pending;
   }
 
+  /** Ferme une connexion de notre fait : en http, la session est d'abord terminée côté serveur. */
+  async function closeConnection(connection: Connection): Promise<void> {
+    connection.closing = true;
+    // Tout de suite, sans attendre onclose : un appel qui suit (la seconde
+    // chance de use) doit ouvrir une nouvelle connexion, pas reprendre celle-ci.
+    connection.evict();
+    // Un DELETE qui échoue (serveur déjà arrêté) n'empêche pas de fermer chez nous.
+    await connection.terminate?.().catch(() => undefined);
+    await connection.client.close();
+  }
+
   function armIdleTimer(userId: string, connection: Connection): void {
     if (connection.idleTimer) clearTimeout(connection.idleTimer);
     connection.idleTimer = setTimeout(() => {
       if (connection.active > 0) return;
-      log.info({ mcpUser: userId, mcpPid: connection.pid }, "serveur MCP inactif, fermeture");
-      connection.closing = true;
-      void connection.client.close();
+      log.info({ mcpUser: userId, ...connection.tag }, messages.idle);
+      void closeConnection(connection);
     }, idleMs);
     // Le minuteur n'empêche pas un script (mcp:probe, eval) de se terminer.
     connection.idleTimer.unref();
   }
 
   /** Exécute fn sur la connexion de l'utilisateur en la marquant occupée. */
-  async function use<T>(userId: string, fn: (connection: Connection) => Promise<T>): Promise<T> {
+  async function attempt<T>(userId: string, fn: (connection: Connection) => Promise<T>): Promise<T> {
     const connection = await getConnection(userId);
     connection.active += 1;
     if (connection.idleTimer) clearTimeout(connection.idleTimer);
     try {
       return await fn(connection);
+    } catch (error) {
+      // http : le serveur n'a pas répondu (arrêté, redémarré, jeton retiré).
+      // La connexion est morte sans qu'onclose l'ait dit : on la retire nous-mêmes.
+      if (transportConfig.kind === "http" && isHttpFailure(error)) {
+        if (!isSessionLost(error)) {
+          failedAt.set(userId, Date.now());
+          log.warn({ mcpUser: userId, ...connection.tag, reason: describe(error), retryInMs: retryDelayMs }, "serveur MCP injoignable");
+        }
+        void closeConnection(connection);
+      }
+      throw error;
     } finally {
       connection.active -= 1;
-      if (connection.active === 0) armIdleTimer(userId, connection);
+      if (connection.active === 0 && !connection.closing) armIdleTimer(userId, connection);
+    }
+  }
+
+  /**
+   * Comme attempt, avec une seconde chance si la session a disparu côté
+   * serveur (404 : serveur redémarré, session expirée) : on en rouvre une
+   * aussitôt, comme le demande la spécification. Le serveur répond : ce
+   * n'est pas une panne, pas de disjoncteur.
+   */
+  async function use<T>(userId: string, fn: (connection: Connection) => Promise<T>): Promise<T> {
+    try {
+      return await attempt(userId, fn);
+    } catch (error) {
+      if (!isSessionLost(error)) throw error;
+      log.info({ mcpUser: userId }, "session MCP perdue côté serveur, nouvelle session");
+      return attempt(userId, fn);
     }
   }
 
@@ -207,7 +326,7 @@ export function createMcpPool({
         const result = await client.callTool(
           { name, arguments: (args ?? {}) as Record<string, unknown> },
           undefined,
-          { signal },
+          { signal, timeout: SDK_REQUEST_TIMEOUT_MS },
         );
         return result as CallToolResult;
       });
@@ -218,15 +337,35 @@ export function createMcpPool({
       connections.clear();
       const settled = await Promise.allSettled(pending);
       const open = settled.flatMap((outcome) => (outcome.status === "fulfilled" ? [outcome.value] : []));
-      // close() ferme le stdin du serveur, qui s'arrête de lui-même ; le SDK
-      // envoie SIGTERM puis SIGKILL s'il traîne (2 s chacun).
-      await Promise.all(
-        open.map((connection) => {
-          connection.closing = true;
-          return connection.client.close();
-        }),
-      );
+      // stdio : close() ferme le stdin du serveur, qui s'arrête de lui-même ; le
+      // SDK envoie SIGTERM puis SIGKILL s'il traîne (2 s chacun).
+      // http : DELETE de la session, le serveur partagé continue de tourner.
+      await Promise.all(open.map(closeConnection));
       return open.length;
     },
   };
+}
+
+/**
+ * Une erreur de transport HTTP : statut d'erreur renvoyé par le serveur
+ * (StreamableHTTPError), ou serveur injoignable (fetch rejette en TypeError).
+ * Une erreur MCP (McpError : outil inconnu, délai) vient d'un serveur vivant.
+ */
+function isHttpFailure(error: unknown): boolean {
+  return error instanceof StreamableHTTPError || (error instanceof TypeError && error.message === "fetch failed");
+}
+
+/** 404 sur une session : le serveur ne la connaît plus et demande d'en ouvrir une autre. */
+function isSessionLost(error: unknown): boolean {
+  return error instanceof StreamableHTTPError && error.code === 404;
+}
+
+/** Statut HTTP ou cause réseau (ECONNREFUSED), jamais le jeton ni le contenu. */
+function describe(error: unknown): string {
+  if (error instanceof StreamableHTTPError) return `HTTP ${error.code ?? "?"}`;
+  if (error instanceof Error && error.cause instanceof Error) {
+    const code = (error.cause as NodeJS.ErrnoException).code;
+    return code ?? error.cause.message;
+  }
+  return error instanceof Error ? error.message : String(error);
 }
