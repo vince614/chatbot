@@ -1,0 +1,6 @@
+# Artefacts generes / transitoires des attaques : tout se regenere depuis les
+# scripts. On ne versionne que les sources (scripts, run.sh) et les RESULTAT.md.
+hits.log
+repro.html
+piege.pdf
+*.bak
