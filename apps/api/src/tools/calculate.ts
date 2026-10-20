@@ -1,6 +1,5 @@
+import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-
-import type { Tool } from "./types.js";
 
 const schema = z.object({
   expression: z
@@ -11,18 +10,14 @@ const schema = z.object({
     .describe('Expression arithmétique, par exemple "1234 * 5678" ou "(2 + 3) ^ 2 / 7".'),
 });
 
-export const calculateTool: Tool<typeof schema> = {
+export const calculateTool = tool(async ({ expression }) => JSON.stringify({ expression, result: evaluate(expression) }), {
   name: "calculate",
   description:
     "Évalue une expression arithmétique exacte : nombres décimaux, + - * / % ^, " +
     "parenthèses et moins unaire. À utiliser pour tout calcul plutôt que de le faire de tête.",
   schema,
-  readOnly: true,
-  async execute({ expression }) {
-    const result = evaluate(expression);
-    return { expression, result };
-  },
-};
+  metadata: { readOnly: true },
+});
 
 /*
  * Évaluateur par descente récursive, sans eval ni Function.

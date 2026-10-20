@@ -1,11 +1,13 @@
 import { safeErrorReason } from "@chatbot/rag/errors";
 import type { Retrieve, RetrievedChunk } from "@chatbot/rag/retrieve";
 import type { User } from "@chatbot/rag/users";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { FastifyBaseLogger, FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
 import { identifyUser } from "../auth/fake-identity.js";
-import { type ConversationOptions, MAX_TOOL_TURNS, runConversation } from "../chat/conversation.js";
+import { type AgentRunOptions, MAX_TOOL_TURNS, runAgent } from "../chat/agent.js";
 import { attachmentSchema, expandMessages, MAX_ATTACHMENTS, McpContextError, promptRefSchema } from "../chat/mcp-context.js";
 import {
   createSearchResults,
@@ -14,11 +16,10 @@ import {
   toSourceSummary,
 } from "../chat/search-results.js";
 import type { RagMode } from "../config.js";
-import type { ChatMessage, LlmClient } from "../llm/index.js";
+import type { ChatMessage } from "../llm/index.js";
 import { loadMcpToolsOrFallback, type McpPool } from "../mcp/index.js";
 import { buildRagPrompt } from "../rag/prompt.js";
 import { openSseStream, type SourceSummary } from "../sse.js";
-import { type AnyTool, createToolRegistry } from "../tools/index.js";
 
 const MAX_MESSAGES = 50;
 const MAX_CONTENT_LENGTH = 8_000;
@@ -74,9 +75,9 @@ class RetrievalError extends Error {
 }
 
 export interface ChatRoutesOptions {
-  llm: LlmClient;
+  model: BaseChatModel;
   /** Les outils maison, les mêmes pour tous : date, calcul. */
-  localTools: AnyTool[];
+  localTools: StructuredToolInterface[];
   /** always : recherche à chaque message ; tool : le modèle décide (voir RAG_MODE). */
   ragMode: RagMode;
   /** Mode always : la recherche, appelée directement. */
@@ -91,7 +92,7 @@ export interface ChatRoutesOptions {
 
 export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (
   app,
-  { llm, localTools, ragMode, retrieve, mcp, users, debugAllowed },
+  { model, localTools, ragMode, retrieve, mcp, users, debugAllowed },
 ) => {
   app.post("/chat", async (request, reply) => {
     // 0. Qui demande ? Avant tout le reste : sans identité, ni validation du
@@ -140,13 +141,13 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (
     try {
       // Ce que les deux modes partagent : la boucle d'outils, ses événements, ses logs.
       const base = {
-        llm,
+        model,
         userId: user.id,
         emit: sse.send,
         log: request.log,
         signal: controller.signal,
         debug: debugAllowed && (parsed.data.debug ?? false),
-      } satisfies Partial<ConversationOptions>;
+      } satisfies Partial<AgentRunOptions>;
 
       let completed: boolean;
       // Mode tool : vrai si une recherche demandée par le modèle a échoué.
@@ -165,9 +166,9 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (
         //    précédents restent tels quels, en texte seul.
         const prompt = buildRagPrompt(textOf(messages.at(-1)!), chunks);
         const history: ChatMessage[] = [...messages.slice(0, -1), { role: "user", content: prompt.user }];
-        ({ completed } = await runConversation({
+        ({ completed } = await runAgent({
           ...base,
-          tools: createToolRegistry(localTools),
+          tools: localTools,
           system: prompt.system,
           messages: history,
         }));
@@ -180,12 +181,12 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (
         const results = createSearchResults();
         const mcpTools = await loadMcpToolsOrFallback(mcp, user.id, { formatResult: results.format });
         if (!mcpTools.available) request.log.warn({ userId: user.id }, "outils MCP indisponibles pour cette requête");
-        const tools = createToolRegistry([...localTools, ...mcpTools.tools]);
+        const tools = [...localTools, ...mcpTools.tools];
 
         // 2. La conversation telle quelle : c'est le modèle qui décide de
         //    chercher. Après chaque recherche, les sources de toute la requête
         //    partent au navigateur (il remplace la liste précédente).
-        ({ completed } = await runConversation({
+        ({ completed } = await runAgent({
           ...base,
           tools,
           system: TOOL_SYSTEM_PROMPT,

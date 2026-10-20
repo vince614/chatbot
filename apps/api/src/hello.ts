@@ -1,11 +1,11 @@
 import { ConfigError, loadConfig } from "./config.js";
-import { createLlmClient } from "./llm/index.js";
+import { createChatModel, streamText } from "./llm/index.js";
 
 const QUESTION = "Explique en trois phrases ce qu'est un monorepo npm.";
 
 try {
   const config = loadConfig();
-  const llm = createLlmClient(config.llm);
+  const model = createChatModel(config.llm);
 
   // Ctrl+C annule la génération en cours plutôt que de tuer le process brutalement.
   const controller = new AbortController();
@@ -13,12 +13,9 @@ try {
 
   console.log(`> ${QUESTION}\n`);
 
-  // Sans outils déclarés, le modèle n'émet que des événements "text".
-  for await (const event of llm.streamChat({
-    messages: [{ role: "user", content: QUESTION }],
-    signal: controller.signal,
-  })) {
-    if (event.type === "text") process.stdout.write(event.text);
+  // Sans outils déclarés, le modèle n'émet que du texte.
+  for await (const text of streamText(model, { messages: [{ role: "user", content: QUESTION }], signal: controller.signal })) {
+    process.stdout.write(text);
   }
   process.stdout.write("\n");
 } catch (error) {

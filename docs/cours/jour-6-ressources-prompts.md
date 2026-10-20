@@ -1,6 +1,6 @@
 # Jour 6 · Cours 2 — Ressources et prompts MCP
 
-> [Sommaire](README.md) · Précédent : [Jour 6 · Cours 1 — Le serveur MCP distant, protégé par OAuth](jour-6-oauth-mcp.md) · [Approfondissement : le code](approfondissement/jour-6-ressources-prompts.md)
+> [Sommaire](README.md) · Précédent : [Jour 6 · Cours 1 — Le serveur MCP distant, protégé par OAuth](jour-6-oauth-mcp.md) · Suivant : [Jour 7 · Cours 1 — LangChain](jour-7-langchain.md) · [Approfondissement : le code](approfondissement/jour-6-ressources-prompts.md)
 
 > **Prérequis.** [Le cours précédent](jour-6-oauth-mcp.md) : le serveur MCP
 > est distant, et chaque requête porte un jeton de l'utilisateur. Jusqu'ici,

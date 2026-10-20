@@ -1,7 +1,8 @@
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { z } from "zod";
 
 import { loadConfig, loadDotEnv } from "../../config.js";
-import { type ChatMessage, createLlmClient, type LlmClient } from "../../llm/index.js";
+import { type ChatMessage, createChatModel, streamText } from "../../llm/index.js";
 import type { EvalQuestion, RunResult } from "../types.js";
 import type { Grade } from "./types.js";
 
@@ -55,7 +56,7 @@ export interface Judge {
 export function createJudge(): Judge {
   loadDotEnv();
   const model = process.env["EVAL_JUDGE_MODEL"]?.trim() || DEFAULT_JUDGE_MODEL;
-  const llm = createLlmClient({ ...loadConfig().llm, model });
+  const llm = createChatModel({ ...loadConfig().llm, model }, { temperature: 0 });
 
   return {
     model,
@@ -75,7 +76,7 @@ export function createJudge(): Judge {
  * redemande une fois en montrant l'erreur ; au second échec, on lève : un
  * verdict deviné serait pire qu'une erreur visible.
  */
-async function askJudge(llm: LlmClient, question: EvalQuestion, answer: string): Promise<JudgeOutput> {
+async function askJudge(llm: BaseChatModel, question: EvalQuestion, answer: string): Promise<JudgeOutput> {
   const user = [
     `<question>${question.question}</question>`,
     `<reponse_attendue>${question.reponse_attendue}</reponse_attendue>`,
@@ -85,9 +86,7 @@ async function askJudge(llm: LlmClient, question: EvalQuestion, answer: string):
   const messages: ChatMessage[] = [{ role: "user", content: user }];
   for (let attempt = 1; attempt <= 2; attempt++) {
     let text = "";
-    for await (const event of llm.streamChat({ system: JUDGE_SYSTEM_PROMPT, messages, temperature: 0 })) {
-      if (event.type === "text") text += event.text;
-    }
+    for await (const chunk of streamText(llm, { system: JUDGE_SYSTEM_PROMPT, messages })) text += chunk;
     const parsed = parseJudgeOutput(text);
     if (parsed.success) return parsed.data;
     if (attempt === 2) throw new Error(`Réponse du juge invalide après 2 essais : ${parsed.error}`);

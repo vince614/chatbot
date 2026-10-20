@@ -17,7 +17,7 @@ import {
   loadSearchMode,
   USERS_FILE,
 } from "../../config.js";
-import { createLlmClient } from "../../llm/index.js";
+import { createChatModel, streamText } from "../../llm/index.js";
 import { buildRagPrompt, extractCitations } from "../prompt.js";
 
 const RULE = "━".repeat(72);
@@ -36,7 +36,7 @@ async function main(): Promise<void> {
   }
 
   const user = await requireUser(USERS_FILE, values.user);
-  const llm = createLlmClient(loadConfig().llm);
+  const model = createChatModel(loadConfig().llm);
   const dbConfig = loadDatabaseConfig();
   const pool = createPool(dbConfig.databaseUrl);
 
@@ -58,14 +58,9 @@ async function main(): Promise<void> {
     // 3. Réponse, affichée au fil de l'eau. Pas d'outils ici : seul le RAG est testé.
     console.log(`${RULE}\nRÉPONSE\n${RULE}`);
     let answer = "";
-    for await (const event of llm.streamChat({
-      system: prompt.system,
-      messages: [{ role: "user", content: prompt.user }],
-    })) {
-      if (event.type === "text") {
-        answer += event.text;
-        process.stdout.write(event.text);
-      }
+    for await (const text of streamText(model, { system: prompt.system, messages: [{ role: "user", content: prompt.user }] })) {
+      answer += text;
+      process.stdout.write(text);
     }
 
     // 4. Sources : celles que la réponse cite, puis celles récupérées mais non citées.

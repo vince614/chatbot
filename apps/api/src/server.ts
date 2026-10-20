@@ -15,7 +15,7 @@ import {
   loadSearchMode,
   USERS_FILE,
 } from "./config.js";
-import { createLlmClient } from "./llm/index.js";
+import { createChatModel } from "./llm/index.js";
 import { createMcpPool } from "./mcp/index.js";
 import { chatRoutes } from "./routes/chat.js";
 import { mcpRoutes } from "./routes/mcp.js";
@@ -25,7 +25,7 @@ import { calculateTool, getCurrentDatetimeTool } from "./tools/index.js";
 const config = loadConfigOrExit();
 // Les utilisateurs fictifs (data/users.json), lus une fois au démarrage.
 const users = await exitOnConfigError(loadUsers(USERS_FILE));
-const llm = createLlmClient(config.llm);
+const model = createChatModel(config.llm);
 // Les outils maison, déclarés ici. Le registre, lui, est construit à chaque
 // requête : il y ajoute les outils MCP de l'utilisateur qui demande.
 const localTools = [getCurrentDatetimeTool, calculateTool];
@@ -87,7 +87,7 @@ await app.register(
     // Pour le sélecteur d'utilisateur de l'interface (exercice : voir
     // auth/fake-identity.ts). Identifiant et nom seulement, jamais les groupes.
     api.get("/users", async () => ({ users: [...users.values()].map(({ id, nom }) => ({ id, nom })) }));
-    await api.register(chatRoutes, { llm, localTools, ragMode: config.ragMode, retrieve, mcp, users, debugAllowed: config.chatDebug });
+    await api.register(chatRoutes, { model, localTools, ragMode: config.ragMode, retrieve, mcp, users, debugAllowed: config.chatDebug });
     // Les ressources et prompts MCP de l'utilisateur, pour le menu « / » et le bouton « joindre ».
     await api.register(mcpRoutes, { mcp, users });
   },

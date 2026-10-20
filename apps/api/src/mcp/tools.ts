@@ -1,6 +1,7 @@
+import { type StructuredToolInterface, tool } from "@langchain/core/tools";
 import type { CallToolResult, Tool as McpTool } from "@modelcontextprotocol/sdk/types.js";
 
-import type { ExternalTool } from "../tools/index.js";
+import type { ToolPolicy } from "../tools/index.js";
 import type { McpPool } from "./pool.js";
 
 /**
@@ -36,7 +37,7 @@ export interface LoadMcpToolsOptions {
 }
 
 export interface McpToolset {
-  tools: ExternalTool[];
+  tools: StructuredToolInterface[];
   /** false : le serveur n'a pas répondu, les outils renvoient tous UNAVAILABLE_MESSAGE. */
   available: boolean;
 }
@@ -69,17 +70,17 @@ const FALLBACK_TOOLS: McpTool[] = [
 ];
 
 /**
- * Les outils du serveur MCP de cet utilisateur, prêts pour ToolRegistry.
+ * Les outils du serveur MCP de cet utilisateur, en outils LangChain.
  * Démarre son serveur s'il ne tourne pas encore.
  */
 export async function loadMcpTools(
   pool: McpPool,
   userId: string,
   options: LoadMcpToolsOptions = {},
-): Promise<ExternalTool[]> {
+): Promise<StructuredToolInterface[]> {
   const tools = await pool.listTools(userId);
   lastKnownTools = tools;
-  return tools.map((tool) => toExternalTool(pool, userId, tool, options));
+  return tools.map((mcpTool) => toLangChainTool(pool, userId, mcpTool, options));
 }
 
 /**
@@ -97,50 +98,63 @@ export async function loadMcpToolsOrFallback(
     return { tools: await loadMcpTools(pool, userId, options), available: true };
   } catch {
     // La cause est déjà dans les logs du pool (démarrage raté, disjoncteur).
-    const tools = (lastKnownTools ?? FALLBACK_TOOLS).map((tool) => ({
-      ...describe(tool),
-      execute: async () => ({ ok: false, content: UNAVAILABLE_MESSAGE }),
-    }));
+    const tools = (lastKnownTools ?? FALLBACK_TOOLS).map((mcpTool) =>
+      tool(
+        async () => {
+          throw new Error(UNAVAILABLE_MESSAGE);
+        },
+        describe(mcpTool, DEFAULT_TIMEOUT_MS),
+      ),
+    );
     return { tools, available: false };
   }
 }
 
-function toExternalTool(pool: McpPool, userId: string, tool: McpTool, options: LoadMcpToolsOptions): ExternalTool {
-  return {
-    ...describe(tool),
-    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    async execute(input, { signal }) {
-      let result: CallToolResult;
-      try {
-        // Le serveur reçoit son nom à lui, sans le préfixe.
-        result = await pool.callTool(userId, tool.name, input, signal);
-      } catch (error) {
-        // Délai dépassé ou client parti : le registre sait le dire, on le laisse faire.
-        if (signal.aborted) throw error;
-        // Serveur tombé pendant l'appel, ou disjoncteur ouvert.
-        return { ok: false, content: UNAVAILABLE_MESSAGE };
-      }
-      if (result.isError) return { ok: false, content: textOf(result) };
-      return { ok: true, content: options.formatResult?.(tool.name, result) ?? textOf(result) };
-    },
-  };
+/**
+ * Un outil MCP vu par LangChain : `tool()` accepte directement le JSON Schema
+ * annoncé par le serveur. Une erreur levée ici devient, grâce au garde
+ * (tools/guard.ts), un résultat d'outil en échec que le modèle lit.
+ */
+function toLangChainTool(pool: McpPool, userId: string, mcpTool: McpTool, options: LoadMcpToolsOptions): StructuredToolInterface {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  return tool(async (input, config) => {
+    // Le signal de la requête (client parti) et le délai de l'outil : le SDK
+    // envoie au serveur une annulation au lieu d'attendre la réponse.
+    const signal = AbortSignal.any([config?.signal ?? new AbortController().signal, AbortSignal.timeout(timeoutMs)]);
+    let result: CallToolResult;
+    try {
+      // Le serveur reçoit son nom à lui, sans le préfixe.
+      result = await pool.callTool(userId, mcpTool.name, input, signal);
+    } catch (error) {
+      if (config?.signal?.aborted) throw error;
+      if (signal.aborted) throw new Error(`L'outil "${MCP_TOOL_PREFIX}${mcpTool.name}" a dépassé le délai de ${timeoutMs} ms.`);
+      // Serveur tombé pendant l'appel, ou disjoncteur ouvert.
+      throw new Error(UNAVAILABLE_MESSAGE);
+    }
+    if (result.isError) throw new Error(textOf(result));
+    return options.formatResult?.(mcpTool.name, result) ?? textOf(result);
+  }, describe(mcpTool, timeoutMs));
 }
 
-/** Nom préfixé, description et schéma : ce que voit le modèle ; et s'il ne fait que lire. */
-function describe(tool: McpTool): Pick<ExternalTool, "name" | "description" | "inputSchema" | "readOnly"> {
-  return {
-    name: `${MCP_TOOL_PREFIX}${tool.name}`,
+/** Nom préfixé, description, schéma ; et, pour le garde, s'il ne fait que lire et son délai. */
+function describe(mcpTool: McpTool, timeoutMs: number) {
+  const policy: ToolPolicy = {
     // L'annotation du serveur, et seulement si elle est explicite : un outil
     // muet sur ce point est traité comme une action (confirmation requise).
-    readOnly: tool.annotations?.readOnlyHint === true,
-    description: tool.description ?? tool.title ?? tool.name,
-    // Le schéma est déjà du JSON Schema : c'est le format que le modèle
-    // reçoit. On le transmet sans passer par Zod (voir le cours).
-    inputSchema: withoutMetaSchema(tool.inputSchema),
+    readOnly: mcpTool.annotations?.readOnlyHint === true,
+    // Le garde ajoute une seconde de marge : c'est le signal ci-dessus qui doit couper le premier.
+    timeoutMs: timeoutMs + 1_000,
+  };
+  return {
+    name: `${MCP_TOOL_PREFIX}${mcpTool.name}`,
+    description: mcpTool.description ?? mcpTool.title ?? mcpTool.name,
+    // Le schéma est déjà du JSON Schema : LangChain le transmet tel quel au modèle.
+    schema: withoutMetaSchema(mcpTool.inputSchema),
+    metadata: { ...policy },
   };
 }
 
-/** Comme pour les outils maison : le "$schema" n'apporte rien au modèle. */
+/** Le "$schema" n'apporte rien au modèle. */
 function withoutMetaSchema(schema: McpTool["inputSchema"]): Record<string, unknown> {
   const { $schema: _ignored, ...rest } = schema as Record<string, unknown>;
   return rest;

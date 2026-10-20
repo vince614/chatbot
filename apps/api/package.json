@@ -28,9 +28,12 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
     "@chatbot/rag": "0.1.0",
+    "@langchain/anthropic": "^1.5.12",
+    "@langchain/core": "^1.2.19",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "fastify": "^5.6.0",
     "jose": "^6.2.12",
+    "langchain": "^1.5.18",
     "zod": "^4.6.6"
   },
   "devDependencies": {

@@ -3,7 +3,7 @@
 Mini-projet d'apprentissage : un chatbot React + Node, organisé en monorepo
 npm workspaces.
 
-- `apps/api` : backend Node 20+ / Fastify / TypeScript strict
+- `apps/api` : backend Node 20+ / Fastify / TypeScript strict ; agent et modèle via LangChain (`langchain`, `@langchain/anthropic`)
 - `apps/web` : frontend React / Vite / TypeScript strict
 - `apps/mcp-server` : le RAG exposé comme serveur MCP (stdio ou Streamable HTTP) : outils, ressources, prompts
 - `apps/auth-server` : mini serveur d'autorisation OAuth (jetons JWT signés, JWKS)
@@ -317,12 +317,12 @@ apps/api/src/
 ├─ routes/chat.ts            POST /api/chat : identité, références MCP, mode always ou tool, sources, flux SSE
 ├─ routes/mcp.ts             GET /api/mcp/resources, GET /api/mcp/prompts, POST /api/mcp/complete
 ├─ chat/mcp-context.ts       pièces jointes et prompts → contenu, au nom de l'utilisateur
-├─ chat/conversation.ts      boucle modèle ↔ outils (partagée par /chat et l'évaluation)
+├─ chat/agent.ts             runAgent : createAgent (LangChain) + middlewares observe, garde, plafond de tours
 ├─ chat/search-results.ts    résultats de search_documents → extraits numérotés, sources
 ├─ mcp/                      client MCP : une connexion par utilisateur (stdio ou http + OAuth), outils MCP → registre, mcp:probe, mcp:auth-probe
 ├─ auth/fake-identity.ts     X-User-Id, remplaçant d'authentification
-├─ llm/                      LlmClient + fabrique ; seul anthropic.ts importe le SDK
-├─ tools/                    registre d'outils (Zod ou JSON Schema, délai par outil, erreurs → résultat)
+├─ llm/                      createChatModel (ChatAnthropic de LangChain), streamText
+├─ tools/                    outils maison (`tool()` de LangChain), garde : effets de bord, délai, erreurs → résultat
 ├─ rag/prompt.ts             prompts système (always, tool), buildRagPrompt, extractCitations (purs)
 ├─ rag/scripts/              migrate, preview, embed-check, ingest, search, ask, sample-pdf
 └─ evals/                    run, graders (code + juge), scores, rapport, historique, calibration, comparaison
@@ -342,8 +342,10 @@ apps/web/src/storage/        historique local : IndexedDB, AES-GCM (Web Crypto),
 ```
 
 Une règle commune : le reste du code ne dépend d'aucun fournisseur. On
-n'importe que `llm/index.js` (`LlmClient`, `createLlmClient`) ou
-`@chatbot/rag/embeddings/index` (`EmbeddingClient`, `createEmbeddingClient`).
+n'importe que `llm/index.js` (`createChatModel`, qui renvoie un `BaseChatModel`
+de LangChain) ou `@chatbot/rag/embeddings/index` (`EmbeddingClient`, `createEmbeddingClient`).
+Seul `llm/index.js` nomme `ChatAnthropic` : changer de fournisseur, c'est changer
+cette ligne.
 
 ## Travailler avec Claude Code
 
@@ -373,3 +375,4 @@ appuyées sur le code, questions et corrigé.
 | `docs/cours/jour-4-memoire-chiffree.md` | Jour 4 · La mémoire chiffrée : IndexedDB, AES-GCM, clé non extractible, sauvegarde différée, menaces |
 | `docs/cours/jour-6-oauth-mcp.md` | Jour 6 · Le serveur MCP distant, protégé par OAuth : serveur d'autorisation, JWT, découverte, audience, scopes, rotation |
 | `docs/cours/jour-6-ressources-prompts.md` | Jour 6 · Ressources et prompts MCP : les trois primitives, autocomplétion, références résolues par l'API, menu « / » |
+| `docs/cours/jour-7-langchain.md` | Jour 7 · LangChain : agent, outils et middlewares à la place de la boucle faite main ; ce qu'on garde à la main et pourquoi |

@@ -1,7 +1,7 @@
 // npm run eval:run -- --user <id> [--rag-mode always|tool] [--mode vector|lexical|hybrid] [--only q01,q19]
 // Rejoue les questions de evals/questions.json dans la même chaîne que /chat,
 // sans HTTP ni historique, une par une :
-//  - always : retrieve → buildRagPrompt → LlmClient ;
+//  - always : retrieve → buildRagPrompt → modèle (sans outils) ;
 //  - tool   : la boucle d'outils de /chat, avec le serveur MCP de l'utilisateur.
 import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -24,9 +24,10 @@ import {
   type SearchMode,
 } from "@chatbot/rag/retrieve";
 import { loadUsers, requireUser } from "@chatbot/rag/users";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { z } from "zod";
 
-import { runConversation } from "../chat/conversation.js";
+import { runAgent } from "../chat/agent.js";
 import { createSearchResults, SEARCH_TOOL_NAME, TOOL_SYSTEM_PROMPT } from "../chat/search-results.js";
 import {
   ConfigError,
@@ -40,10 +41,10 @@ import {
   type RagMode,
   USERS_FILE,
 } from "../config.js";
-import { createLlmClient, type LlmClient, type LlmEffort } from "../llm/index.js";
+import { createChatModel, type LlmEffort, streamText } from "../llm/index.js";
 import { createMcpPool, loadMcpTools, type McpPool } from "../mcp/index.js";
 import { buildRagPrompt, extractCitations, RAG_SYSTEM_PROMPT } from "../rag/prompt.js";
-import { calculateTool, createToolRegistry, getCurrentDatetimeTool } from "../tools/index.js";
+import { calculateTool, getCurrentDatetimeTool } from "../tools/index.js";
 import { writeReport } from "./report.js";
 import {
   type EvalQuestion,
@@ -127,7 +128,8 @@ export async function executeRun(args: string[]): Promise<string | null> {
   try {
     await assertEmbeddingDimension(pool, dbConfig.embeddingDimension);
     const retrieve = createRetriever({ pool, embedder: createEmbeddingClient(embeddingConfig), defaultMode: mode });
-    const llm = createLlmClient(appConfig.llm);
+    // L'effort est épinglé dans le modèle lui-même : chaque appel du run le porte.
+    const llm = createChatModel(appConfig.llm, { effort: EFFORT });
 
     const startedAt = new Date();
     const config: RunConfig = {
@@ -206,7 +208,7 @@ export async function executeRun(args: string[]): Promise<string | null> {
  */
 async function runQuestion(
   question: EvalQuestion,
-  { retrieve, llm, userGroups }: { retrieve: Retrieve; llm: LlmClient; userGroups: readonly string[] },
+  { retrieve, llm, userGroups }: { retrieve: Retrieve; llm: BaseChatModel; userGroups: readonly string[] },
 ): Promise<RunResult> {
   const startedAt = performance.now();
   const result: RunResult = {
@@ -232,12 +234,8 @@ async function runQuestion(
     // Sans historique ni outils : la question seule, comme premier message de /chat.
     const prompt = buildRagPrompt(question.question, chunks);
     let answer = "";
-    for await (const event of llm.streamChat({
-      system: prompt.system,
-      messages: [{ role: "user", content: prompt.user }],
-      effort: EFFORT,
-    })) {
-      if (event.type === "text") answer += event.text;
+    for await (const text of streamText(llm, { system: prompt.system, messages: [{ role: "user", content: prompt.user }] })) {
+      answer += text;
     }
 
     result.reponse_obtenue = answer;
@@ -260,7 +258,7 @@ async function runQuestion(
  */
 async function runToolQuestion(
   question: EvalQuestion,
-  { llm, mcp, userId }: { llm: LlmClient; mcp: McpPool; userId: string },
+  { llm, mcp, userId }: { llm: BaseChatModel; mcp: McpPool; userId: string },
 ): Promise<RunResult> {
   const startedAt = performance.now();
   const result: RunResult = {
@@ -284,13 +282,12 @@ async function runToolQuestion(
       formatResult: searchResults.format,
       timeoutMs: EVAL_SEARCH_TIMEOUT_MS,
     });
-    const outcome = await runConversation({
-      llm,
-      tools: createToolRegistry([getCurrentDatetimeTool, calculateTool, ...mcpTools]),
+    const outcome = await runAgent({
+      model: llm,
+      tools: [getCurrentDatetimeTool, calculateTool, ...mcpTools],
       system: TOOL_SYSTEM_PROMPT,
       messages: [{ role: "user", content: question.question }],
       userId,
-      effort: EFFORT,
       emit: () => undefined,
       log: { info: () => undefined },
       onToolResult: ({ name, input }, toolResult) => {

@@ -1,5 +1,4 @@
-// Point d'entrée public des outils.
-export type { AnyTool, ExternalTool, Tool, ToolContext, ToolDescriptor, ToolExecutionResult } from "./types.js";
-export { createToolRegistry, type ExecuteOptions, type ToolRegistry } from "./registry.js";
+// Point d'entrée public des outils : les outils maison (LangChain `tool()`) et leur garde.
 export { calculateTool } from "./calculate.js";
 export { getCurrentDatetimeTool } from "./datetime.js";
+export { confirmationRequired, toolGuard, type ToolGuardOptions, type ToolPolicy } from "./guard.js";
