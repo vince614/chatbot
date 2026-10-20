@@ -1,7 +1,32 @@
-/** Ce que le serveur accepte : du texte, rien d'autre. */
+/** Un document joint à un message : l'URI part au serveur, le nom sert à l'affichage. */
+export type Attachment = {
+  uri: string;
+  name: string;
+};
+
+/** Un prompt MCP choisi par l'utilisateur, avec les valeurs de ses arguments. */
+export type PromptCall = {
+  name: string;
+  arguments: Record<string, string>;
+};
+
+/**
+ * Ce que le serveur accepte. `attachments` et `prompt` ne concernent que les
+ * messages `user`. Pour un message prompt, `content` est le libellé affiché :
+ * le serveur l'ignore et le remplace par le prompt résolu.
+ */
 export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  attachments?: string[];
+  prompt?: PromptCall;
+};
+
+/** Ce que le composer remet à `send` : un texte libre, ou un prompt dont `text` est le libellé. */
+export type SendInput = {
+  text: string;
+  attachments?: Attachment[];
+  prompt?: PromptCall;
 };
 
 /** Un appel d'outil observé pendant une réponse. `ok` reste indéfini tant que l'outil tourne. */
@@ -26,8 +51,11 @@ export type Source = {
 /**
  * Message tel que l'interface le manipule. Les activités d'outils et les
  * sources ne sont qu'un affichage : elles ne sont jamais renvoyées au serveur.
+ * Les pièces jointes et le prompt, eux, repartent avec chaque message.
  */
-export type UiMessage = ChatMessage & {
+export type UiMessage = Omit<ChatMessage, "attachments"> & {
+  /** Les noms sont conservés pour l'affichage ; seules les URI repartent au serveur. */
+  attachments?: Attachment[];
   tools?: ToolActivity[];
   sources?: Source[];
 };

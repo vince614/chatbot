@@ -16,3 +16,4 @@ export {
   type McpToolset,
   UNAVAILABLE_MESSAGE,
 } from "./tools.js";
+export { createTokenProvider, OAuthError, type TokenProvider } from "./oauth.js";

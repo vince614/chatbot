@@ -1,6 +1,6 @@
 # Jour 5 · Cours 1 — La sécurité : durcir et prouver
 
-> [Sommaire](README.md) · Précédent : [Jour 4 · Cours 5 — La mémoire chiffrée](jour-4-memoire-chiffree.md) · Récapitulatif : [`security/SECURITE.md`](../../security/SECURITE.md) · Schéma : [`docs/architecture.md`](../architecture.md)
+> [Sommaire](README.md) · Précédent : [Jour 4 · Cours 5 — La mémoire chiffrée](jour-4-memoire-chiffree.md) · Suivant : [Jour 6 · Cours 1 — Le serveur MCP distant, protégé par OAuth](jour-6-oauth-mcp.md) · Récapitulatif : [`security/SECURITE.md`](../../security/SECURITE.md) · Schéma : [`docs/architecture.md`](../architecture.md)
 
 > **Prérequis.** Tout le reste de la semaine, et la phase 1 de sécurité
 > ([`security/attacks/`](../../security/attacks/README.md)) : trois attaques

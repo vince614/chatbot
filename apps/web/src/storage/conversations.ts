@@ -94,13 +94,19 @@ export async function wipeAll(): Promise<void> {
 }
 
 /**
- * Ce qu'on garde d'un message affiché : le texte et les sources. Pas les
+ * Ce qu'on garde d'un message affiché : le texte, les sources, les pièces jointes et le prompt. Pas les
  * outils, et pas une bulle assistant vide (réponse arrêtée avant le premier mot).
  */
 export function toStoredMessages(messages: readonly UiMessage[]): StoredMessage[] {
   return messages
     .filter((message) => message.role === "user" || message.content !== "")
-    .map(({ role, content, sources }) => (sources?.length ? { role, content, sources } : { role, content }));
+    .map(({ role, content, sources, attachments, prompt }) => ({
+      role,
+      content,
+      ...(sources?.length && { sources }),
+      ...(attachments?.length && { attachments }),
+      ...(prompt && { prompt }),
+    }));
 }
 
 async function readListItem(key: CryptoKey | undefined, record: unknown): Promise<ConversationListItem> {

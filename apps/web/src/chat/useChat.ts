@@ -2,18 +2,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { type Autosave, createAutosave } from "../storage/autosave";
 import type { Conversation } from "../storage/types";
-import { streamChat } from "./api";
-import type { ChatMessage, ChatStatus, LogEntry, UiMessage } from "./types";
+import { ChatError, streamChat } from "./api";
+import type { ChatMessage, ChatStatus, LogEntry, SendInput, UiMessage } from "./types";
 
 export interface UseChatResult {
   messages: UiMessage[];
   status: ChatStatus;
   error: string | null;
-  /** Ajoute un message utilisateur et lance la génération. */
-  send: (text: string) => void;
+  /** Ajoute un message utilisateur (texte, pièces jointes ou prompt) et lance la génération. */
+  send: (input: SendInput) => void;
   /** Interrompt la génération en cours, en gardant le texte déjà reçu. */
   stop: () => void;
   /** Après une erreur : retire la réponse incomplète et renvoie le dernier message utilisateur. */
+  /** Faux quand la dernière requête a été refusée (400) : pas de bouton « Réessayer ». */
+  canRetry: boolean;
   retry: () => void;
   /** Journal des événements, du plus ancien au plus récent. */
   log: LogEntry[];
@@ -51,6 +53,8 @@ export function useChat(
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [status, setStatus] = useState<ChatStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  // Faux après un refus (400) : renvoyer la même requête serait refusé de la même façon.
+  const [canRetry, setCanRetry] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
   const nextLogId = useRef(1);
@@ -156,6 +160,7 @@ export function useChat(
     scheduleSave();
     setStatus("streaming");
     setError(null);
+    setCanRetry(true);
     append("state", "status → streaming");
 
     // Un flux annulé (Stop, changement d'utilisateur) ne doit plus toucher aux messages,
@@ -197,6 +202,12 @@ export function useChat(
         append("state", "status → idle (arrêt volontaire)");
       } else {
         const message = err instanceof Error ? err.message : "Erreur inconnue.";
+        // Refusée (400 : document introuvable, prompt inconnu…) : la requête n'a
+        // pas été traitée. Le message part de l'historique, sinon il serait
+        // renvoyé, et refusé, avec chaque message suivant.
+        const refused = err instanceof ChatError && err.status === 400;
+        if (refused) commit(dropTrailingUserMessage);
+        setCanRetry(!refused);
         setError(message);
         setStatus("error");
         append("state", `status → error : ${message}`);
@@ -214,13 +225,22 @@ export function useChat(
   }, [append, commit, scheduleSave, userId]);
 
   const send = useCallback(
-    (text: string) => {
+    ({ text, attachments, prompt }: SendInput) => {
       const content = text.trim();
       // abortRef plutôt que status : deux envois dans le même rendu verraient
       // encore « idle » et lanceraient deux flux, dont un impossible à arrêter.
       if (!content || !userId || abortRef.current) return;
-      append("action", `send (${content.length} caractères)`);
-      void run([...messagesRef.current, { role: "user", content }]);
+      const extras = [prompt && `prompt ${prompt.name}`, attachments?.length && `${attachments.length} pièce(s) jointe(s)`]
+        .filter(Boolean)
+        .join(", ");
+      append("action", `send (${content.length} caractères${extras ? `, ${extras}` : ""})`);
+      const message: UiMessage = {
+        role: "user",
+        content,
+        ...(attachments?.length && { attachments }),
+        ...(prompt && { prompt }),
+      };
+      void run([...messagesRef.current, message]);
     },
     [userId, run, append],
   );
@@ -255,7 +275,7 @@ export function useChat(
     await autosaveRef.current?.flush();
   }, []);
 
-  return { messages, status, error, send, stop, retry, log, clearLog, discardPending, flushPending };
+  return { messages, status, error, canRetry, send, stop, retry, log, clearLog, discardPending, flushPending };
 }
 
 /** Le champ data d'un événement SSE est du JSON chez nous, mais on reste tolérant. */
@@ -268,9 +288,11 @@ function parseJsonOrText(raw: string): unknown {
 }
 
 /**
- * Projette l'historique en texte seul avant l'envoi : seuls `role` et
- * `content` partent. Les sources (comme les outils) ne sont qu'un affichage
- * et ne repartent jamais au serveur ; les [n] restent dans le texte, mais
+ * Projette l'historique avant l'envoi : `role` et `content`, plus les URI des
+ * pièces jointes et le prompt des messages utilisateur. Le serveur les
+ * re-résout à CHAQUE requête pour TOUT l'historique (il ne garde rien), donc
+ * chaque message doit les redonner. Les sources (comme les outils) ne sont
+ * qu'un affichage et ne repartent jamais ; les [n] restent dans le texte, mais
  * le serveur re-récupère ses propres passages à chaque question.
  *
  * SIMPLIFICATION VOULUE : les appels d'outils et leurs résultats ne vivent que
@@ -279,7 +301,12 @@ function parseJsonOrText(raw: string): unknown {
  * une question de suivi (« et en secondes ? »), il rappellera l'outil.
  */
 function toWireHistory(messages: UiMessage[]): ChatMessage[] {
-  return messages.map(({ role, content }) => ({ role, content }));
+  return messages.map(({ role, content, attachments, prompt }) => ({
+    role,
+    content,
+    ...(attachments?.length && { attachments: attachments.map((attachment) => attachment.uri) }),
+    ...(prompt && { prompt }),
+  }));
 }
 
 function updateLastAssistant(
@@ -304,6 +331,11 @@ function markToolResult(tools: UiMessage["tools"], name: string, ok: boolean) {
  * Des sources seules ne comptent pas : elles ne s'affichent que si le texte
  * les cite, donc sans texte elles restent invisibles.
  */
+/** Retire le dernier message s'il vient de l'utilisateur (sa requête a été refusée). */
+function dropTrailingUserMessage(messages: UiMessage[]): UiMessage[] {
+  return messages.at(-1)?.role === "user" ? messages.slice(0, -1) : messages;
+}
+
 function dropEmptyTrailingAssistant(messages: UiMessage[]): UiMessage[] {
   const last = messages.at(-1);
   const isEmpty = last?.role === "assistant" && last.content === "" && !last.tools?.length;

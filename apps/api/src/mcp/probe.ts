@@ -27,7 +27,7 @@ async function main(): Promise<void> {
   const question = positionals.join(" ").trim() || DEFAULT_QUESTION;
 
   // MCP_TRANSPORT : un sous-processus (stdio) ou une session sur le serveur HTTP.
-  const transport = await loadMcpTransport(await loadUsers(USERS_FILE));
+  const transport = loadMcpTransport(log);
   console.log(`Transport MCP : ${transport.kind}${transport.kind === "http" ? ` (${transport.url.href})` : ""}\n`);
   const pool = createMcpPool({ log, transport });
   try {

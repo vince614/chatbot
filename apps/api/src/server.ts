@@ -18,6 +18,7 @@ import {
 import { createLlmClient } from "./llm/index.js";
 import { createMcpPool } from "./mcp/index.js";
 import { chatRoutes } from "./routes/chat.js";
+import { mcpRoutes } from "./routes/mcp.js";
 import { calculateTool, getCurrentDatetimeTool } from "./tools/index.js";
 
 // Le serveur refuse de démarrer si la configuration est incomplète.
@@ -41,10 +42,10 @@ const retrieve = createRetriever({
 // Le logger par défaut trace méthode, URL et statut : jamais le corps des requêtes.
 const app = Fastify({ logger: true });
 // Les connexions MCP, une par utilisateur, ouvertes au premier message de
-// chacun : un sous-processus (stdio) ou une session sur le serveur HTTP, avec
-// le jeton de l'utilisateur (MCP_TRANSPORT). Rien n'est ouvert ici : un
-// serveur MCP en panne n'empêche pas l'API de démarrer.
-const mcpTransport = await exitOnConfigError(loadMcpTransport(users));
+// chacun : une session sur le serveur MCP distant, avec un jeton OAuth de
+// l'utilisateur (http, par défaut), ou un sous-processus (stdio). Rien n'est
+// ouvert ici : un serveur MCP ou d'autorisation en panne n'empêche pas l'API de démarrer.
+const mcpTransport = await exitOnConfigError(Promise.resolve().then(() => loadMcpTransport(app.log)));
 const mcp = createMcpPool({ log: app.log, transport: mcpTransport });
 // À l'arrêt du serveur, on ferme proprement les connexions à la base et les sous-processus.
 app.addHook("onClose", async () => {
@@ -87,6 +88,8 @@ await app.register(
     // auth/fake-identity.ts). Identifiant et nom seulement, jamais les groupes.
     api.get("/users", async () => ({ users: [...users.values()].map(({ id, nom }) => ({ id, nom })) }));
     await api.register(chatRoutes, { llm, localTools, ragMode: config.ragMode, retrieve, mcp, users, debugAllowed: config.chatDebug });
+    // Les ressources et prompts MCP de l'utilisateur, pour le menu « / » et le bouton « joindre ».
+    await api.register(mcpRoutes, { mcp, users });
   },
   { prefix: "/api" },
 );

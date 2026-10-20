@@ -12,6 +12,7 @@
   "dependencies": {
     "@chatbot/rag": "0.1.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
+    "jose": "^6.2.12",
     "zod": "^4.6.6"
   }
 }

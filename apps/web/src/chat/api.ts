@@ -4,6 +4,13 @@ import type { ChatMessage, Source } from "./types";
 /** Erreur "métier" du chat, dont le message peut être affiché tel quel. */
 export class ChatError extends Error {
   override readonly name = "ChatError";
+  constructor(
+    message: string,
+    /** Le statut HTTP, si le serveur a refusé la requête avant d'ouvrir le flux. */
+    readonly status?: number,
+  ) {
+    super(message);
+  }
 }
 
 export interface StreamChatHandlers {
@@ -65,7 +72,7 @@ export async function streamChat(
 
   handlers.onHttp?.(response.status);
   if (!response.ok) {
-    throw new ChatError(await describeHttpError(response));
+    throw new ChatError(await describeHttpError(response), response.status);
   }
   if (!response.body) {
     throw new ChatError("Le serveur a répondu sans corps.");
@@ -131,18 +138,20 @@ function parseJson<T>(raw: string): T {
   return JSON.parse(raw) as T;
 }
 
+/**
+ * Les refus du serveur portent un `{ error }` lisible (« Document introuvable :
+ * x.pdf », service indisponible…) ; une validation Zod porte des `issues`.
+ */
 async function describeHttpError(response: Response): Promise<string> {
+  const body = (await response.json().catch(() => null)) as {
+    error?: string;
+    issues?: { message: string }[];
+  } | null;
+  const detail = body?.error ?? body?.issues?.[0]?.message;
   if (response.status === 400) {
-    const body = (await response.json().catch(() => null)) as {
-      issues?: { message: string }[];
-    } | null;
-    const detail = body?.issues?.[0]?.message;
     return detail ? `Requête refusée : ${detail}` : "Requête refusée par le serveur.";
   }
-  if (response.status === 401) {
-    // Refusé avant tout flux SSE : { "error": "Utilisateur non identifié." }.
-    const body = (await response.json().catch(() => null)) as { error?: string } | null;
-    return body?.error ?? "Utilisateur non identifié.";
-  }
+  if (response.status === 401) return detail ?? "Utilisateur non identifié.";
+  if (response.status === 503 && detail) return detail;
   return `Erreur du serveur (HTTP ${response.status}).`;
 }

@@ -1,5 +1,0 @@
-{
-  "REMPLACE-MOI par la sortie de : openssl rand -hex 32 (alice)": "alice",
-  "REMPLACE-MOI par la sortie de : openssl rand -hex 32 (bruno)": "bruno",
-  "REMPLACE-MOI par la sortie de : openssl rand -hex 32 (chloe)": "chloe"
-}

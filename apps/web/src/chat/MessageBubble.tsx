@@ -2,6 +2,7 @@ import { useCallback, useId, useMemo, useState, type ComponentProps } from "reac
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { AttachmentChips } from "../mcp/AttachmentChips";
 import { extractCitedIndexes, formatPages, linkifyCitations, parseCitationHref, sourceAnchorId } from "./citations";
 import { checkImageSrc, checkLinkHref, safeUrlTransform } from "./safeUrls";
 import { SourceList } from "./SourceList";
@@ -112,8 +113,14 @@ export function MessageBubble({ message, streaming }: MessageBubbleProps) {
   return (
     <article className={`bubble bubble--${message.role}`}>
       {isUser ? (
-        // Le texte utilisateur est affiché tel quel, sauts de ligne compris.
-        <p className="bubble__text">{message.content}</p>
+        <>
+          {/* Le texte utilisateur est affiché tel quel, sauts de ligne compris. Pour un prompt, c'est son libellé. */}
+          <p className={`bubble__text${message.prompt ? " bubble__text--prompt" : ""}`}>
+            {message.prompt && <span className="badge">prompt</span>}
+            {message.content}
+          </p>
+          {message.attachments && <AttachmentChips items={message.attachments} />}
+        </>
       ) : (
         <>
           {message.tools && message.tools.length > 0 && (

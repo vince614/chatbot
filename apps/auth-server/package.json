@@ -1,0 +1,16 @@
+{
+  "name": "@chatbot/auth-server",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Mini serveur d'autorisation OAuth : délivre des jetons JWT signés (ES256) pour une ressource (aud)",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "start": "tsc -b 1>&2 && node dist/index.js"
+  },
+  "dependencies": {
+    "@chatbot/rag": "0.1.0",
+    "jose": "^6.2.12"
+  }
+}

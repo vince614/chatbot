@@ -20,6 +20,8 @@ dans l'ordre : chacun part de l'état du code laissé par le précédent.
 | 4 | 4 | [Le serveur MCP distant](jour-4-serveur-distant.md) | Transport Streamable HTTP, sessions, jeton par requête en temps constant, identité liée à la session, OAuth 2.1 (expliqué), client HTTP dans l'API | [approfondissement](approfondissement/jour-4-serveur-distant.md) |
 | 4 | 5 | [La mémoire chiffrée](jour-4-memoire-chiffree.md) | IndexedDB sans bibliothèque, AES-GCM 256 (IV, AAD), clé non extractible, métadonnées chiffrées, sauvegarde différée, deux onglets, menaces (XSS, extension) | [approfondissement](approfondissement/jour-4-memoire-chiffree.md) |
 | 5 | 1 | [La sécurité : durcir et prouver](jour-5-securite.md) | Rendu sûr des réponses (`safeUrls`), CSP et en-têtes, verrou sur les outils à effet de bord, `DATA_REMINDER`, `CHAT_DEBUG`, logs d'erreur sans contenu, sondes avant / après | — (voir [`security/SECURITE.md`](../../security/SECURITE.md) et [`docs/architecture.md`](../architecture.md)) |
+| 6 | 1 | [Le serveur MCP distant, protégé par OAuth](jour-6-oauth-mcp.md) | Serveur d'autorisation (JWT ES256, JWKS), découverte RFC 9728 / 8414, `aud` (RFC 8707), 401 / 403 / 503, jetons renouvelés, rotation de clé, `mcp:auth-probe` | [approfondissement](approfondissement/jour-6-oauth-mcp.md) |
+| 6 | 2 | [Ressources et prompts MCP](jour-6-ressources-prompts.md) | Les trois primitives, `rag://documents/{fichier}`, prompts avec ressource embarquée, autocomplétion, références résolues par l'API, menu « / » et pièces jointes | [approfondissement](approfondissement/jour-6-ressources-prompts.md) |
 
 ## La trame commune
 

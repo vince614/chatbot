@@ -146,6 +146,35 @@ export async function listVisibleDocuments(pool: pg.Pool, userGroups: readonly s
   return rows.map((row) => ({ fileName: row.file_name, pages: row.pages, ingestedAt: row.ingested_at }));
 }
 
+export interface DocumentPassage {
+  chunkIndex: number;
+  pageStart: number;
+  pageEnd: number;
+  content: string;
+}
+
+/**
+ * Les passages d'un document, dans l'ordre, si ces groupes peuvent le lire ;
+ * null sinon. Un document interdit et un document inexistant donnent le même
+ * résultat : l'appelant ne peut pas les distinguer.
+ */
+export async function readVisibleDocument(
+  pool: pg.Pool,
+  fileName: string,
+  userGroups: readonly string[],
+): Promise<DocumentPassage[] | null> {
+  if (userGroups.length === 0) return null;
+  const { rows } = await pool.query<{ chunk_index: number; page_start: number; page_end: number; content: string }>(
+    `SELECT c.chunk_index, c.page_start, c.page_end, c.content
+     FROM documents d JOIN chunks c ON c.document_id = d.id
+     WHERE d.file_name = $1 AND d.allowed_groups && $2::text[]
+     ORDER BY c.chunk_index`,
+    [fileName, userGroups],
+  );
+  if (rows.length === 0) return null;
+  return rows.map((row) => ({ chunkIndex: row.chunk_index, pageStart: row.page_start, pageEnd: row.page_end, content: row.content }));
+}
+
 export interface SearchResult {
   fileName: string;
   chunkIndex: number;

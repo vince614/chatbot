@@ -2,15 +2,15 @@
 // stdio (par défaut) : lancé par un client MCP (Inspector, Claude Code, l'API),
 // qui lui parle sur stdin/stdout ; MCP_USER_ID est obligatoire.
 // http : écoute sur http://127.0.0.1:MCP_HTTP_PORT/mcp (3100 par défaut) ;
-// chaque requête porte un jeton de apps/api/data/mcp-tokens.json.
+// chaque requête porte un jeton JWT du serveur d'autorisation (npm run auth).
 import { createPool } from "@chatbot/rag/db/pool";
 import { assertEmbeddingDimension } from "@chatbot/rag/db/schema";
 import { createEmbeddingClient } from "@chatbot/rag/embeddings/index";
 import { ConfigError } from "@chatbot/rag/env";
 import { createRetriever } from "@chatbot/rag/retrieve";
 
-import { createAuthenticator } from "./auth.js";
-import { loadHttpPort, loadHttpTokens, loadMcpConfig, loadStdioUser, parseTransport } from "./config.js";
+import { createJwtAuthenticator } from "./auth.js";
+import { loadHttpConfig, loadMcpConfig, loadStdioUser, parseTransport } from "./config.js";
 import { log, redirectConsoleToStderr } from "./log.js";
 import { startHttp } from "./transports/http.js";
 import { startStdio } from "./transports/stdio.js";
@@ -41,16 +41,24 @@ if (transport === "stdio") {
   const user = await exitOnError(loadStdioUser);
   stop = await startStdio({ user, pool, retrieve }, config.searchMode, () => void shutdown());
 } else {
-  // Un processus, plusieurs utilisateurs : l'identité vient du jeton de
-  // chaque requête (data/mcp-tokens.json), jamais de MCP_USER_ID.
-  const tokens = await exitOnError(loadHttpTokens);
-  const port = await exitOnError(loadHttpPort);
+  // Un processus, plusieurs utilisateurs : l'identité vient du jeton JWT de
+  // chaque requête (sub), jamais de MCP_USER_ID.
+  const http = await exitOnError(loadHttpConfig);
   stop = await exitOnError(() =>
     startHttp({
-      port,
+      port: http.port,
+      resource: http.resource,
+      issuer: http.issuer,
+      scopes: [http.requiredScope],
       searchMode: config.searchMode,
       contextFor: (sessionUser) => ({ user: sessionUser, pool, retrieve }),
-      auth: createAuthenticator(tokens),
+      auth: createJwtAuthenticator({
+        issuer: http.issuer,
+        audience: http.resource,
+        jwksUrl: http.jwksUrl,
+        requiredScope: http.requiredScope,
+        users: http.users,
+      }),
     }),
   );
 }

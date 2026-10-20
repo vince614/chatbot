@@ -940,3 +940,8 @@ body.resizing-horizontal {
 .neutralized__note {
   font-size: 0.85em;
 }
+
+/* Le menu « / » et le formulaire de prompt s'ouvrent au-dessus de la zone de saisie. */
+.composer-wrap {
+  position: relative;
+}

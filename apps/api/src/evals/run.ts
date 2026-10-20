@@ -119,7 +119,7 @@ export async function executeRun(args: string[]): Promise<string | null> {
   // En stdio, il reçoit le mode de recherche du run (sinon il prendrait celui
   // du .env, et --mode ne servirait à rien). En http, le serveur tourne déjà :
   // c'est son RAG_SEARCH_MODE de lancement qui compte.
-  const mcpTransport = ragMode === "tool" ? await loadMcpTransport(await loadUsers(USERS_FILE)) : null;
+  const mcpTransport = ragMode === "tool" ? loadMcpTransport(mcpLog) : null;
   if (mcpTransport?.kind === "http") {
     console.error(`  ! MCP en http (${mcpTransport.url.href}) : la recherche suit le RAG_SEARCH_MODE du serveur, lance-le avec ${mode}.`);
   }

@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { identifyUser } from "../auth/fake-identity.js";
 import { type ConversationOptions, MAX_TOOL_TURNS, runConversation } from "../chat/conversation.js";
+import { attachmentSchema, expandMessages, MAX_ATTACHMENTS, McpContextError, promptRefSchema } from "../chat/mcp-context.js";
 import {
   createSearchResults,
   SEARCH_TOOL_NAME,
@@ -31,9 +32,13 @@ const RETRIEVAL_TIMEOUT_MS = 10_000;
 
 // Le client n'envoie que du texte : les échanges d'outils ne vivent que le temps
 // d'une requête, côté serveur. Simplification voulue (voir apps/web/src/chat/useChat.ts).
+// Un message de l'utilisateur peut porter des références MCP (pièces jointes,
+// prompt) : l'API les résout elle-même (voir chat/mcp-context.ts).
 const chatMessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().trim().min(1, "Le contenu est vide.").max(MAX_CONTENT_LENGTH),
+  attachments: z.array(attachmentSchema).max(MAX_ATTACHMENTS, `Au plus ${MAX_ATTACHMENTS} pièces jointes par message.`).optional(),
+  prompt: promptRefSchema.optional(),
 });
 
 const chatRequestSchema = z.object({
@@ -112,6 +117,18 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (
       });
     }
 
+    // Les références MCP (pièces jointes, prompts), résolues au nom de
+    // l'utilisateur AVANT d'ouvrir le flux : une référence refusée reçoit une
+    // réponse JSON classique (400, 503), comme un corps invalide.
+    let messages: ChatMessage[];
+    try {
+      messages = await expandMessages(parsed.data.messages, mcp, user.id);
+    } catch (error) {
+      if (!(error instanceof McpContextError)) throw error;
+      request.log.warn({ userId: user.id, status: error.status, reason: describeError(error.cause ?? error) }, "référence MCP refusée");
+      return reply.code(error.status).send({ error: error.message });
+    }
+
     // Si le client ferme la connexion, on annule l'appel au modèle et les outils en cours.
     const controller = new AbortController();
     reply.raw.once("close", () => controller.abort());
@@ -121,7 +138,6 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (
     const sse = openSseStream(reply.raw);
 
     try {
-      const messages = parsed.data.messages;
       // Ce que les deux modes partagent : la boucle d'outils, ses événements, ses logs.
       const base = {
         llm,
@@ -136,8 +152,9 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (
       // Mode tool : vrai si une recherche demandée par le modèle a échoué.
       let searchFailed = false;
       if (ragMode === "always") {
-        // 1. Recherche à partir du dernier message utilisateur (garanti par le schéma).
-        const question = messages.at(-1)!.content;
+        // 1. Recherche à partir du texte saisi dans le dernier message (garanti
+        //    par le schéma), sans ses pièces jointes ; le modèle, lui, reçoit tout.
+        const question = parsed.data.messages.at(-1)!.content;
         const chunks = await searchDocuments(retrieve, question, user, controller.signal, request.log);
 
         // 2. Les sources partent avant le premier delta : le navigateur peut les
@@ -146,7 +163,7 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (
 
         // 3. Le dernier message devient « documents + question ». Les messages
         //    précédents restent tels quels, en texte seul.
-        const prompt = buildRagPrompt(question, chunks);
+        const prompt = buildRagPrompt(textOf(messages.at(-1)!), chunks);
         const history: ChatMessage[] = [...messages.slice(0, -1), { role: "user", content: prompt.user }];
         ({ completed } = await runConversation({
           ...base,
@@ -252,6 +269,10 @@ async function searchDocuments(
 /** Ce que le navigateur reçoit des passages : numéro, fichier, pages, score, début du texte. */
 function toSourceSummaries(chunks: RetrievedChunk[]): SourceSummary[] {
   return chunks.map((chunk, i) => toSourceSummary({ ...chunk, index: i + 1 }));
+}
+
+function textOf(message: ChatMessage): string {
+  return typeof message.content === "string" ? message.content : "";
 }
 
 /**

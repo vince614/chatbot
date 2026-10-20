@@ -11,7 +11,7 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
+    "dev": "concurrently -n auth,mcp,api,web -c magenta,yellow,blue,green \"npm run --silent auth\" \"npm run --silent mcp -- --transport http\" \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
     "typecheck": "npm run typecheck --workspaces",
     "hello": "npm run hello -w apps/api",
     "db:up": "docker compose up -d --wait",
@@ -30,7 +30,9 @@
     "eval": "npm run eval -w apps/api --",
     "eval:history": "npm run eval:history -w apps/api --",
     "mcp": "npm run --silent mcp -w apps/mcp-server --",
-    "mcp:probe": "npm run mcp:probe -w apps/api --"
+    "auth": "npm run --silent start -w apps/auth-server",
+    "mcp:probe": "npm run mcp:probe -w apps/api --",
+    "mcp:auth-probe": "npm run mcp:auth-probe -w apps/api"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

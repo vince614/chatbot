@@ -7,7 +7,16 @@ import { safeErrorReason } from "@chatbot/rag/errors";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { CallToolResult, Tool as McpTool } from "@modelcontextprotocol/sdk/types.js";
+import type {
+  CallToolResult,
+  GetPromptResult,
+  Prompt,
+  ReadResourceResult,
+  Resource,
+  Tool as McpTool,
+} from "@modelcontextprotocol/sdk/types.js";
+
+import { OAuthError, type TokenProvider } from "./oauth.js";
 
 /** Le sous-ensemble du logger Fastify (pino) dont ce module a besoin. */
 export interface McpLogger {
@@ -18,12 +27,12 @@ export interface McpLogger {
 /**
  * Comment joindre le serveur MCP d'un utilisateur.
  *  - stdio : un sous-processus par utilisateur, lancé avec MCP_USER_ID ;
- *  - http : une session par utilisateur sur un serveur déjà lancé, avec le
- *    jeton de cet utilisateur (userId → jeton).
+ *  - http : une session par utilisateur sur un serveur distant, avec un
+ *    jeton OAuth de cet utilisateur, obtenu et renouvelé par `tokens`.
  */
 export type McpTransportConfig =
   | { kind: "stdio" }
-  | { kind: "http"; url: URL; tokens: ReadonlyMap<string, string> };
+  | { kind: "http"; url: URL; tokens: TokenProvider };
 
 export interface McpPoolOptions {
   log: McpLogger;
@@ -55,6 +64,13 @@ export interface McpPool {
   /** Les outils du serveur, tels qu'il les déclare (noms non préfixés). */
   listTools(userId: string): Promise<McpTool[]>;
   callTool(userId: string, name: string, args: unknown, signal?: AbortSignal): Promise<CallToolResult>;
+  /** Les ressources que cet utilisateur peut lire (documents visibles, catalogue). */
+  listResources(userId: string): Promise<Resource[]>;
+  readResource(userId: string, uri: string): Promise<ReadResourceResult>;
+  listPrompts(userId: string): Promise<Prompt[]>;
+  getPrompt(userId: string, name: string, args: Record<string, string>): Promise<GetPromptResult>;
+  /** Les valeurs proposées pour un argument de prompt, d'après ce qui est déjà tapé. */
+  completePromptArgument(userId: string, prompt: string, argument: { name: string; value: string }, context?: Record<string, string>): Promise<string[]>;
   /** Ferme toutes les connexions et renvoie leur nombre. Un appel suivant en rouvre une. */
   close(): Promise<number>;
 }
@@ -154,10 +170,29 @@ export function createMcpPool({
     return transport;
   }
 
-  /** http : une session sur le serveur partagé, son identité dans le jeton de chaque requête. */
-  function httpTransport(url: URL, token: string): StreamableHTTPClientTransport {
-    // Le SDK ajoute ces en-têtes à chaque requête : POST, GET du flux, DELETE.
-    return new StreamableHTTPClientTransport(url, { requestInit: { headers: { Authorization: `Bearer ${token}` } } });
+  /**
+   * http : une session sur le serveur distant, son identité dans le jeton de
+   * chaque requête. Le jeton change (5 min) pendant la vie de la session : on
+   * ne le fixe donc pas une fois pour toutes, on le demande à chaque requête
+   * (fetch). Un 401 (jeton expiré plus tôt que prévu, clé du serveur
+   * d'autorisation changée) : on jette ce jeton et on réessaie une fois.
+   */
+  function httpTransport(url: URL, userId: string, tokens: TokenProvider): StreamableHTTPClientTransport {
+    const send = (input: string | URL, init: RequestInit | undefined, token: string) => {
+      const headers = new Headers(init?.headers);
+      headers.set("Authorization", `Bearer ${token}`);
+      return fetch(input, { ...init, headers });
+    };
+    return new StreamableHTTPClientTransport(url, {
+      fetch: async (input, init) => {
+        const token = await tokens.token(userId);
+        const response = await send(input, init, token);
+        if (response.status !== 401) return response;
+        tokens.invalidate(userId, token);
+        log.info({ mcpUser: userId }, "jeton MCP refusé (401), nouveau jeton");
+        return send(input, init, await tokens.token(userId));
+      },
+    });
   }
 
   /** onClosed : appelé quand la connexion se ferme, pour la retirer du cache. */
@@ -200,9 +235,7 @@ export function createMcpPool({
         await client.connect(transport);
         connection.tag = { mcpPid: transport.pid };
       } else {
-        const token = transportConfig.tokens.get(userId);
-        if (token === undefined) throw new Error("aucun jeton MCP pour cet utilisateur (data/mcp-tokens.json)");
-        const transport = httpTransport(transportConfig.url, token);
+        const transport = httpTransport(transportConfig.url, userId, transportConfig.tokens);
         await client.connect(transport);
         connection.tag = { mcpSession: transport.sessionId?.slice(0, 8) };
         connection.terminate = () => transport.terminateSession();
@@ -334,6 +367,33 @@ export function createMcpPool({
       });
     },
 
+    listResources(userId) {
+      return use(userId, async ({ client }) => (await client.listResources()).resources);
+    },
+
+    readResource(userId, uri) {
+      return use(userId, ({ client }) => client.readResource({ uri }));
+    },
+
+    listPrompts(userId) {
+      return use(userId, async ({ client }) => (await client.listPrompts()).prompts);
+    },
+
+    getPrompt(userId, name, args) {
+      return use(userId, ({ client }) => client.getPrompt({ name, arguments: args }));
+    },
+
+    completePromptArgument(userId, prompt, argument, context) {
+      return use(userId, async ({ client }) => {
+        const result = await client.complete({
+          ref: { type: "ref/prompt", name: prompt },
+          argument,
+          ...(context ? { context: { arguments: context } } : {}),
+        });
+        return result.completion.values;
+      });
+    },
+
     async close() {
       const pending = [...connections.values()];
       connections.clear();
@@ -354,7 +414,11 @@ export function createMcpPool({
  * Une erreur MCP (McpError : outil inconnu, délai) vient d'un serveur vivant.
  */
 function isHttpFailure(error: unknown): boolean {
-  return error instanceof StreamableHTTPError || (error instanceof TypeError && error.message === "fetch failed");
+  return (
+    error instanceof StreamableHTTPError ||
+    error instanceof OAuthError ||
+    (error instanceof TypeError && error.message === "fetch failed")
+  );
 }
 
 /** 404 sur une session : le serveur ne la connaît plus et demande d'en ouvrir une autre. */
@@ -365,6 +429,7 @@ function isSessionLost(error: unknown): boolean {
 /** Statut HTTP ou cause réseau (ECONNREFUSED), jamais le jeton ni le contenu. */
 function describe(error: unknown): string {
   if (error instanceof StreamableHTTPError) return `HTTP ${error.code ?? "?"}`;
+  if (error instanceof OAuthError) return `OAuth : ${error.message}`;
   if (error instanceof Error && error.cause instanceof Error) {
     const code = (error.cause as NodeJS.ErrnoException).code;
     return code ?? safeErrorReason(error.cause);

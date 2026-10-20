@@ -2,11 +2,10 @@ import { fileURLToPath } from "node:url";
 
 import * as rag from "@chatbot/rag/config";
 import { ConfigError, loadDotEnv as loadEnvFile, requireEnv } from "@chatbot/rag/env";
-import { loadMcpTokens } from "@chatbot/rag/mcp-tokens";
-import type { User } from "@chatbot/rag/users";
+import { loadClientCredentials, SCOPES } from "@chatbot/rag/oauth";
 
 import type { LlmClientOptions } from "./llm/index.js";
-import type { McpTransportConfig } from "./mcp/index.js";
+import { createTokenProvider, type McpLogger, type McpTransportConfig } from "./mcp/index.js";
 
 export { ConfigError };
 
@@ -52,20 +51,18 @@ export const ACL_FILE = `${PDF_DIR}acl.json`;
 /** L'annuaire des utilisateurs fictifs (voir @chatbot/rag/users). */
 export const USERS_FILE = fileURLToPath(new URL("../data/users.json", import.meta.url));
 
-/** Les jetons du serveur MCP en HTTP (voir @chatbot/rag/mcp-tokens), partagés avec le serveur. */
-export const MCP_TOKENS_FILE = fileURLToPath(new URL("../data/mcp-tokens.json", import.meta.url));
-
 export const MCP_TRANSPORTS = ["stdio", "http"] as const;
 const DEFAULT_MCP_HTTP_URL = "http://127.0.0.1:3100/mcp";
 
 /**
- * MCP_TRANSPORT, optionnel : « stdio » (par défaut) lance un serveur MCP par
- * utilisateur ; « http » se connecte au serveur déjà lancé à MCP_HTTP_URL,
- * avec le jeton de chaque utilisateur (data/mcp-tokens.json).
+ * MCP_TRANSPORT, optionnel : « http » (par défaut) traite le serveur MCP
+ * comme un service distant, joint à MCP_HTTP_URL avec un jeton OAuth par
+ * utilisateur (OAUTH_CLIENT_ID / OAUTH_CLIENT_SECRET) ; « stdio » lance un
+ * serveur MCP par utilisateur, en sous-processus.
  */
-export async function loadMcpTransport(users: ReadonlyMap<string, User>): Promise<McpTransportConfig> {
+export function loadMcpTransport(log: McpLogger): McpTransportConfig {
   loadDotEnv();
-  const kind = process.env["MCP_TRANSPORT"]?.trim() || "stdio";
+  const kind = process.env["MCP_TRANSPORT"]?.trim() || "http";
   if (kind === "stdio") return { kind };
   if (kind !== "http") {
     throw new ConfigError(`MCP_TRANSPORT doit valoir ${MCP_TRANSPORTS.join(", ")} (reçu : "${kind}").`);
@@ -77,8 +74,9 @@ export async function loadMcpTransport(users: ReadonlyMap<string, User>): Promis
   } catch {
     throw new ConfigError(`MCP_HTTP_URL n'est pas une URL (reçu : "${rawUrl}").`);
   }
-  const tokens = await loadMcpTokens(MCP_TOKENS_FILE, users);
-  return { kind, url, tokens: new Map(tokens.map(({ token, user }) => [user.id, token])) };
+  // Ni l'adresse du serveur d'autorisation ni l'audience : elles se découvrent (voir mcp/oauth.ts).
+  const tokens = createTokenProvider({ mcpUrl: url, client: loadClientCredentials(), scope: SCOPES.documents, log });
+  return { kind, url, tokens };
 }
 
 /**

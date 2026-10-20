@@ -1,8 +1,9 @@
-import type { Source } from "../chat/types";
+import type { Attachment, PromptCall, Source } from "../chat/types";
 
 /**
- * Un message tel qu'il est conservé : le texte, et les sources affichées sous
- * une réponse. Les échanges d'outils (UiMessage.tools) ne sont pas conservés :
+ * Un message tel qu'il est conservé : le texte, les sources affichées sous
+ * une réponse, et les pièces jointes ou le prompt d'un message utilisateur
+ * (le serveur les re-résout à chaque requête, il faut donc les garder). Les échanges d'outils (UiMessage.tools) ne sont pas conservés :
  * c'est un affichage du moment, comme le serveur qui les oublie après chaque
  * requête.
  */
@@ -10,6 +11,8 @@ export type StoredMessage = {
   role: "user" | "assistant";
   content: string;
   sources?: Source[];
+  attachments?: Attachment[];
+  prompt?: PromptCall;
 };
 
 /**

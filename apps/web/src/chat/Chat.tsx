@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 
+import { useMcpCatalog } from "../mcp/useMcpCatalog";
 import { ConversationSidebar } from "../storage/ConversationSidebar";
 import { useConversations } from "../storage/useConversations";
 
@@ -11,6 +12,7 @@ import { MessageList } from "./MessageList";
 import { ResizeHandle } from "./ResizeHandle";
 import { useChat } from "./useChat";
 import { UserSelect, type UsersState } from "./UserSelect";
+import "../mcp/mcp.css";
 import "./chat.css";
 
 export function Chat() {
@@ -21,11 +23,12 @@ export function Chat() {
   // Vrai pendant une suppression ou un effacement : aucun envoi ne doit
   // pouvoir relancer une sauvegarde de la conversation qu'on supprime.
   const [busy, setBusy] = useState(false);
-  const { messages, status, error, send, stop, retry, log, clearLog, discardPending, flushPending } = useChat(
+  const { messages, status, error, canRetry, send, stop, retry, log, clearLog, discardPending, flushPending } = useChat(
     userId,
     conversations.current,
     conversations.onSaved,
   );
+  const catalog = useMcpCatalog(userId);
   const [placement, setPlacement] = useState<LogPlacement>(readPlacement);
   const [logWidth, setLogWidth] = useState(() => readSize(WIDTH_KEY, DEFAULT_WIDTH));
   const [logHeight, setLogHeight] = useState(() => readSize(HEIGHT_KEY, DEFAULT_HEIGHT));
@@ -128,9 +131,13 @@ export function Chat() {
 
           <MessageList messages={messages} status={status} />
 
-          {status === "error" && error && <ErrorBanner message={error} onRetry={retry} />}
+          {status === "error" && error && <ErrorBanner message={error} onRetry={canRetry ? retry : undefined} />}
 
           <Composer
+            // Brouillon et pièces jointes ne suivent pas d'un utilisateur à l'autre.
+            key={userId}
+            userId={userId}
+            catalog={catalog}
             disabled={busy || status === "streaming" || !conversations.current}
             onSend={send}
             onStop={stop}

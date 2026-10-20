@@ -7,7 +7,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
-import { type Authenticator, type Identity, sameToken } from "../auth.js";
+import { type Authenticator, type Identity, sameIdentity } from "../auth.js";
 import { log } from "../log.js";
 import { createRagServer } from "../server.js";
 import { observeToolCalls } from "./tool-log.js";
@@ -22,10 +22,16 @@ const MAX_BODY_BYTES = 1024 * 1024;
 
 export interface HttpOptions {
   port: number;
+  /** Notre identifiant de ressource (l'audience des jetons), annoncé dans nos métadonnées. */
+  resource: string;
+  /** Le serveur d'autorisation à qui demander un jeton, annoncé lui aussi. */
+  issuer: string;
+  /** Les scopes que nous connaissons. */
+  scopes: readonly string[];
   searchMode: string;
   /** Le contexte des outils pour cet utilisateur (base et recherche partagées, utilisateur propre). */
   contextFor: (user: User) => ToolContext;
-  /** Vérifie le jeton de chaque requête. */
+  /** Vérifie le jeton (JWT) de chaque requête. */
   auth: Authenticator;
 }
 
@@ -34,7 +40,7 @@ interface Session {
   id: string;
   transport: StreamableHTTPServerTransport;
   server: McpServer;
-  /** Fixée à l'initialize : l'utilisateur des outils, et le jeton exigé ensuite. */
+  /** Fixée à l'initialize : l'utilisateur des outils, et celui qu'on exige ensuite (le jeton, lui, change). */
   identity: Identity;
   idleTimer: NodeJS.Timeout | null;
 }
@@ -46,9 +52,24 @@ interface Session {
  *
  * Renvoie la fonction d'arrêt.
  */
-export async function startHttp({ port, searchMode, contextFor, auth }: HttpOptions): Promise<() => Promise<void>> {
+export async function startHttp({ port, resource, issuer, scopes, searchMode, contextFor, auth }: HttpOptions): Promise<() => Promise<void>> {
   const sessions = new Map<string, Session>();
-  const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
+  const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`, new URL(resource).host]);
+
+  // RFC 9728 : nos métadonnées de ressource protégée. Un client qui reçoit un
+  // 401 y lit quel serveur d'autorisation appeler et pour quelle ressource
+  // demander le jeton. L'adresse insère le chemin de la ressource après
+  // /.well-known/oauth-protected-resource (ici …/oauth-protected-resource/mcp).
+  const resourceUrl = new URL(resource);
+  const metadataPath = `/.well-known/oauth-protected-resource${resourceUrl.pathname === "/" ? "" : resourceUrl.pathname}`;
+  const metadataUrl = `${resourceUrl.origin}${metadataPath}`;
+  const metadata = {
+    resource,
+    authorization_servers: [issuer],
+    scopes_supported: scopes,
+    bearer_methods_supported: ["header"],
+    resource_name: "Documents internes (chatbot RAG)",
+  };
 
   const httpServer = createServer((req, res) => {
     handle(req, res).catch((error: unknown) => {
@@ -68,21 +89,28 @@ export async function startHttp({ port, searchMode, contextFor, auth }: HttpOpti
 
     const { pathname } = new URL(req.url ?? "/", `http://${HOST}`);
 
-    // 2. /health : sans authentification, et rien d'autre que « ok ».
-    if (pathname === "/health") {
-      return req.method === "GET" ? sendJson(res, 200, { status: "ok" }) : sendJson(res, 405, { error: "Méthode non autorisée." });
+    // 2. /health et les métadonnées : sans authentification (il faut pouvoir
+    //    les lire AVANT d'avoir un jeton), et rien de secret.
+    if (pathname === "/health" || pathname === metadataPath) {
+      if (req.method !== "GET") return sendJson(res, 405, { error: "Méthode non autorisée." });
+      return sendJson(res, 200, pathname === "/health" ? { status: "ok" } : metadata);
     }
     if (pathname !== "/mcp") return sendJson(res, 404, { error: "Introuvable." });
 
     // 3. Qui demande ? Le jeton, à CHAQUE requête, avant tout traitement MCP :
-    //    ni le corps, ni la session ne sont lus pour un inconnu. Aucun détail
-    //    dans la réponse (absent, mal formé, inconnu : même 401).
-    const identity = auth.authenticate(req.headers.authorization);
-    if (!identity) {
-      log(`requête refusée (401) : jeton ${req.headers.authorization ? "inconnu ou mal formé" : "absent"}`);
-      res.setHeader("WWW-Authenticate", 'Bearer realm="chatbot-rag"');
-      return sendJson(res, 401, { error: "Authentification requise." });
+    //    ni le corps, ni la session ne sont lus pour un inconnu. La raison
+    //    exacte va dans nos logs ; le client lit un code OAuth et l'adresse
+    //    de nos métadonnées (WWW-Authenticate, RFC 6750 et RFC 9728).
+    const verdict = await auth.authenticate(req.headers.authorization);
+    if (!verdict.ok) {
+      log(`requête refusée (${verdict.status}) : ${verdict.reason}`);
+      const challenge = [`resource_metadata="${metadataUrl}"`];
+      if (verdict.error) challenge.push(`error="${verdict.error}"`, `error_description="${verdict.description}"`);
+      if (verdict.error === "insufficient_scope") challenge.push(`scope="${scopes[0]}"`);
+      if (verdict.status !== 503) res.setHeader("WWW-Authenticate", `Bearer ${challenge.join(", ")}`);
+      return sendJson(res, verdict.status, { error: verdict.error ?? "unauthorized", error_description: verdict.description });
     }
+    const identity = verdict.identity;
 
     // 4. Une session existante : le transport de cette session traite la
     //    requête (POST d'un message, GET du flux de notifications, DELETE).
@@ -92,10 +120,12 @@ export async function startHttp({ port, searchMode, contextFor, auth }: HttpOpti
       // 404 : la spécification demande au client de rouvrir une session.
       if (!session) return sendRpcError(res, 404, "Session inconnue ou expirée : recommence par initialize.");
       // L'identifiant de session n'est pas un secret d'authentification :
-      // connaître celui de chloe ne doit pas suffire à parler en son nom.
-      if (!sameToken(identity, session.identity)) {
-        log(`session ${short(session.id)} : jeton différent de celui qui l'a ouverte (utilisateur ${identity.user.id}), refusé`);
-        return sendRpcError(res, 403, "Cette session appartient à un autre jeton.");
+      // connaître celui de chloe ne doit pas suffire à parler en son nom. Le
+      // jeton, lui, se renouvelle toutes les 5 min : on compare l'utilisateur
+      // (sub) et le client, pas le jeton.
+      if (!sameIdentity(identity, session.identity)) {
+        log(`session ${short(session.id)} : utilisateur ${identity.user.id} différent de celui qui l'a ouverte, refusé`);
+        return sendRpcError(res, 403, "Cette session appartient à un autre utilisateur.");
       }
       touch(session);
       return session.transport.handleRequest(req, res);
@@ -155,7 +185,7 @@ export async function startHttp({ port, searchMode, contextFor, auth }: HttpOpti
     httpServer.once("error", reject);
     httpServer.listen(port, HOST, resolve);
   });
-  log(`prêt (http://${HOST}:${port}/mcp, recherche ${searchMode})`);
+  log(`prêt (http://${HOST}:${port}/mcp, ressource ${resource}, émetteur ${issuer}, recherche ${searchMode})`);
 
   return async () => {
     await Promise.all([...sessions.values()].map((session) => session.server.close()));

@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { type DatabaseConfig, loadDatabaseConfig, loadEmbeddingConfig, loadSearchMode } from "@chatbot/rag/config";
 import type { EmbeddingClientOptions } from "@chatbot/rag/embeddings/index";
 import { ConfigError, loadDotEnv } from "@chatbot/rag/env";
-import { loadMcpTokens, type McpToken } from "@chatbot/rag/mcp-tokens";
+import { loadIssuer, loadMcpHttpPort, loadMcpResource, SCOPES } from "@chatbot/rag/oauth";
 import type { SearchMode } from "@chatbot/rag/retrieve";
 import { loadUsers, requireUser, type User } from "@chatbot/rag/users";
 
@@ -16,13 +16,9 @@ import { loadUsers, requireUser, type User } from "@chatbot/rag/users";
 const API_DIR = new URL("../../api/", import.meta.url);
 const ENV_FILE = fileURLToPath(new URL(".env", API_DIR));
 export const USERS_FILE = fileURLToPath(new URL("data/users.json", API_DIR));
-export const TOKENS_FILE = fileURLToPath(new URL("data/mcp-tokens.json", API_DIR));
 
 export const TRANSPORTS = ["stdio", "http"] as const;
 export type Transport = (typeof TRANSPORTS)[number];
-
-/** Port HTTP par défaut : ni l'API (3000), ni Vite (5173). */
-const DEFAULT_HTTP_PORT = 3100;
 
 /** Ce qui ne dépend pas du transport : la base, Voyage, le mode de recherche. */
 export interface McpConfig {
@@ -50,23 +46,40 @@ export function loadStdioUser(): Promise<User> {
   return requireUser(USERS_FILE, process.env["MCP_USER_ID"]?.trim() || undefined, "MCP_USER_ID");
 }
 
-/**
- * http : les jetons et leurs utilisateurs. MCP_USER_ID n'est pas lu :
- * l'identité vient de chaque requête, pas du processus.
- */
-export async function loadHttpTokens(): Promise<McpToken[]> {
-  return loadMcpTokens(TOKENS_FILE, await loadUsers(USERS_FILE));
+/** http : ce qu'il faut pour être une ressource OAuth. */
+export interface HttpConfig {
+  port: number;
+  /** Notre identifiant de ressource (RFC 8707), l'audience exigée dans les jetons. */
+  resource: string;
+  /** Le serveur d'autorisation dont on accepte les jetons. */
+  issuer: string;
+  jwksUrl: URL;
+  requiredScope: string;
+  users: Map<string, User>;
 }
 
-/** http : le port d'écoute (MCP_HTTP_PORT, 3100 par défaut). */
-export function loadHttpPort(): number {
+/**
+ * http : MCP_USER_ID n'est pas lu, l'identité vient du jeton de chaque
+ * requête. AUTH_JWKS_URL est optionnelle (<émetteur>/.well-known/jwks.json).
+ */
+export async function loadHttpConfig(): Promise<HttpConfig> {
   loadDotEnv(ENV_FILE);
-  const raw = process.env["MCP_HTTP_PORT"]?.trim() || String(DEFAULT_HTTP_PORT);
-  const port = Number(raw);
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-    throw new ConfigError(`MCP_HTTP_PORT doit être un port entre 1 et 65535 (reçu : "${raw}").`);
+  const issuer = loadIssuer();
+  const rawJwks = process.env["AUTH_JWKS_URL"]?.trim() || `${issuer}/.well-known/jwks.json`;
+  let jwksUrl: URL;
+  try {
+    jwksUrl = new URL(rawJwks);
+  } catch {
+    throw new ConfigError(`AUTH_JWKS_URL n'est pas une URL (reçu : "${rawJwks}").`);
   }
-  return port;
+  return {
+    port: loadMcpHttpPort(),
+    resource: loadMcpResource(),
+    issuer,
+    jwksUrl,
+    requiredScope: SCOPES.documents,
+    users: await loadUsers(USERS_FILE),
+  };
 }
 
 /** --transport stdio|http (stdio par défaut : c'est ce qu'attendent .mcp.json et l'API). */
