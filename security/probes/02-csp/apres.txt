@@ -1,0 +1,78 @@
+=== En-têtes de la page (vite preview) ===
+HTTP/1.1 200 OK
+Vary: Origin
+Content-Type: text/html
+Cache-Control: no-cache
+Etag: W/"1ea-LwGqcvfq3F4JIV+Ae0Od4DncLoE"
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+X-Frame-Options: DENY
+Cross-Origin-Opener-Policy: same-origin
+Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
+Date: Mon, 19 Oct 2026 14:33:21 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+=== En-têtes de l'API (/api/health) ===
+HTTP/1.1 200 OK
+Content-Security-Policy: default-src 'none'; frame-ancestors 'none'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Cross-Origin-Resource-Policy: same-origin
+Cache-Control: no-store
+content-type: application/json; charset=utf-8
+content-length: 15
+Date: Mon, 19 Oct 2026 14:33:21 GMT
+Connection: keep-alive
+Keep-Alive: timeout=72
+
+=== En-têtes du flux SSE (/api/chat, sans identité -> 401) ===
+HTTP/1.1 401 Unauthorized
+Content-Security-Policy: default-src 'none'; frame-ancestors 'none'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Cross-Origin-Resource-Policy: same-origin
+Cache-Control: no-store
+content-type: application/json; charset=utf-8
+content-length: 39
+Date: Mon, 19 Oct 2026 14:33:21 GMT
+Connection: keep-alive
+Keep-Alive: timeout=72
+
+=== Console ===
+[navigateur:error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[navigateur:error] Executing inline script violates the following Content Security Policy directive 'script-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-htkDF5NQpU4/C3Lk+2sLcZ/7SFdr6pxNKyyfGoEVKlw='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked.
+[navigateur:error] Connecting to 'http://127.0.0.1:9999/sonde-csp-fetch?d=conversation-de-bruno' violates the following Content Security Policy directive: "connect-src 'self'". The action has been blocked.
+[navigateur:error] Fetch API cannot load http://127.0.0.1:9999/sonde-csp-fetch?d=conversation-de-bruno. Refused to connect because it violates the document's Content Security Policy.
+[console.log] [sonde-02] injections faites
+[navigateur:error] Loading the image 'http://127.0.0.1:9999/sonde-csp-image?d=conversation-de-bruno' violates the following Content Security Policy directive: "img-src 'self' data:". The action has been blocked.
+[console.log] [sonde-02] fetch vers le témoin refusé
+[navigateur:error] Executing inline event handler violates the following Content Security Policy directive 'script-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-...'), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked.
+
+=== Réseau (hors fichiers du serveur de dev) ===
+GET http://localhost:4173/
+GET http://localhost:4173/assets/index-DFizbxjw.js
+GET http://localhost:4173/assets/index-P7ozq2Gk.css
+GET http://localhost:4173/api/users
+GET http://localhost:4173/favicon.ico
+GET http://localhost:4173/inexistant.png
+GET http://127.0.0.1:9999/sonde-csp-image?d=conversation-de-bruno
+  ↳ bloquée par le navigateur (csp)
+
+=== DOM du dernier message assistant ===
+(aucun message assistant)
+
+=== witness.log ===
+HTTP/1.1 200 OK
+Content-Security-Policy: default-src 'none'; frame-ancestors 'none'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Cross-Origin-Resource-Policy: same-origin
+Cache-Control: no-cache, no-transform
+Content-Type: text/event-stream; charset=utf-8
+Connection: keep-alive
+X-Accel-Buffering: no
+Date: Mon, 19 Oct 2026 14:33:53 GMT
+Transfer-Encoding: chunked
+

@@ -1,0 +1,4 @@
+=== Prompt système, mode tool : 1972 caractères (copie : prompt-systeme-tool.txt) ===
+=== Prompt système, mode always : 1358 caractères (copie : prompt-systeme-always.txt) ===
+
+OK : aucun secret, aucun nom de document, de groupe ni d'utilisateur dans le prompt système.

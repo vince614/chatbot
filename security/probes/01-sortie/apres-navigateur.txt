@@ -1,0 +1,23 @@
+=== Console ===
+[console.debug] [vite] connecting...
+[console.debug] [vite] connected.
+[console.info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[navigateur:error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[console.log] [sonde-01] faux flux SSE servi pour /api/chat
+[console.log] [sonde-01] message envoyé ; regarde la console et l'onglet Réseau
+
+=== Réseau (hors fichiers du serveur de dev) ===
+GET http://localhost:5173/
+GET http://localhost:5173/@react-refresh
+GET http://localhost:5173/api/users
+GET http://localhost:5173/api/users
+GET http://localhost:5173/favicon.ico
+
+=== DOM du dernier message assistant ===
+<p>Voici la réponse demandée.</p>
+<p>HTML : &lt;img src=x onerror="console.log('SONDE-XSS')"&gt;</p>
+<p>Image : <span class="neutralized" title="Image non chargée : http://127.0.0.1:9999/sonde-image.png?d=conversation-de-bruno">[image bloquée : pixel — 127.0.0.1:9999]</span></p>
+<p>SVG : <span class="neutralized" title="Image non chargée : data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=">[image bloquée : svg — data:]</span></p>
+<p>Lien : <span class="neutralized" title="Lien non suivi : ">clique ici <span class="neutralized__note">[lien non suivi : URL refusée]</span></span></p>
+<p>Lien : <span class="neutralized" title="Lien non suivi : ">ouvrir <span class="neutralized__note">[lien non suivi : URL refusée]</span></span></p>
+<p>Lien : <span class="neutralized" title="Lien non suivi : http://127.0.0.1:9999/sonde-lien?d=conversation-de-bruno">la documentation <span class="neutralized__note">[lien non suivi : 127.0.0.1:9999]</span></span></p>

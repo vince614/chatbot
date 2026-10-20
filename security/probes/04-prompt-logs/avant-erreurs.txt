@@ -1,0 +1,5 @@
+FUITE   [mcp] search_documents : échec en 0 ms : invalid input syntax for type tsquery: "SONDE-LOG-ERREUR question de bruno sur la prime"
+FUITE   [mcp] search_documents : échec en 0 ms : Voyage a répondu HTTP 400 : {"detail":"Input 'SONDE-LOG-ERREUR question de bruno sur la prime' is too long"}
+FUITE   [mcp] search_documents : échec en 0 ms : 400 {"type":"error","error":{"message":"messages.0.content: « SONDE-LOG-ERREUR question de bruno sur la prime »"}}
+
+3/3 log(s) d'erreur recopient la donnée.

@@ -1,4 +1,5 @@
 import type { createPool } from "@chatbot/rag/db/pool";
+import { safeErrorReason } from "@chatbot/rag/errors";
 import type { Retrieve } from "@chatbot/rag/retrieve";
 import type { User } from "@chatbot/rag/users";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -19,7 +20,8 @@ export interface ToolContext {
  *
  * Le détail technique (message de pg ou de Voyage) part sur stderr ; le modèle
  * ne reçoit que `publicMessage`. Les logs ne contiennent ni la question ni
- * les groupes : le nom de l'outil, la durée, l'erreur.
+ * les groupes : le nom de l'outil, la durée, l'erreur — sans le texte cité
+ * entre guillemets, où pg et Voyage recopient la donnée (safeErrorReason).
  */
 export async function runTool(
   name: string,
@@ -32,7 +34,7 @@ export async function runTool(
     log(`${name} : ok en ${Math.round(performance.now() - start)} ms`);
     return result;
   } catch (error) {
-    log(`${name} : échec en ${Math.round(performance.now() - start)} ms : ${error instanceof Error ? error.message : error}`);
+    log(`${name} : échec en ${Math.round(performance.now() - start)} ms : ${safeErrorReason(error)}`);
     return { isError: true, content: [{ type: "text", text: publicMessage }] };
   }
 }

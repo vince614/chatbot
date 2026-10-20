@@ -1,3 +1,4 @@
+import { safeErrorReason } from "@chatbot/rag/errors";
 import type { Retrieve, RetrievedChunk } from "@chatbot/rag/retrieve";
 import type { User } from "@chatbot/rag/users";
 import type { FastifyBaseLogger, FastifyPluginAsync } from "fastify";
@@ -39,8 +40,8 @@ const chatRequestSchema = z.object({
   /**
    * Si vrai, le flux contient des événements "debug" avec le prompt système,
    * l'historique complet envoyé au modèle et sa réponse brute. Outil
-   * d'apprentissage : en production on retirerait ce drapeau, car il expose
-   * le prompt système au client.
+   * d'apprentissage, ignoré sauf si le serveur l'autorise (CHAT_DEBUG=true) :
+   * c'est le serveur, pas le client, qui décide d'exposer son prompt.
    */
   debug: z.boolean().optional(),
   messages: z
@@ -79,11 +80,13 @@ export interface ChatRoutesOptions {
   mcp: McpPool;
   /** Annuaire des utilisateurs (data/users.json), par identifiant. */
   users: ReadonlyMap<string, User>;
+  /** CHAT_DEBUG : sans lui, le drapeau "debug" du client est ignoré. */
+  debugAllowed: boolean;
 }
 
 export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (
   app,
-  { llm, localTools, ragMode, retrieve, mcp, users },
+  { llm, localTools, ragMode, retrieve, mcp, users, debugAllowed },
 ) => {
   app.post("/chat", async (request, reply) => {
     // 0. Qui demande ? Avant tout le reste : sans identité, ni validation du
@@ -126,7 +129,7 @@ export const chatRoutes: FastifyPluginAsync<ChatRoutesOptions> = async (
         emit: sse.send,
         log: request.log,
         signal: controller.signal,
-        debug: parsed.data.debug ?? false,
+        debug: debugAllowed && (parsed.data.debug ?? false),
       } satisfies Partial<ConversationOptions>;
 
       let completed: boolean;
@@ -260,11 +263,10 @@ function isInvalidArguments(content: string): boolean {
   return content.startsWith("MCP error -32602");
 }
 
+/**
+ * Pour les logs : le type et la phrase technique de l'erreur, sans le texte
+ * cité (une erreur du fournisseur peut reprendre un morceau de la requête).
+ */
 function describeError(error: unknown): string {
-  // Une connexion refusée en IPv6 puis en IPv4 arrive sous forme d'AggregateError,
-  // au message vide : on décrit plutôt chacune des erreurs regroupées.
-  if (error instanceof AggregateError && error.errors.length > 0) {
-    return error.errors.map(describeError).join(" ; ");
-  }
-  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  return safeErrorReason(error);
 }

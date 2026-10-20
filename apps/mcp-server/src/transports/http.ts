@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
+import { safeErrorReason } from "@chatbot/rag/errors";
 import type { User } from "@chatbot/rag/users";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -51,7 +52,7 @@ export async function startHttp({ port, searchMode, contextFor, auth }: HttpOpti
 
   const httpServer = createServer((req, res) => {
     handle(req, res).catch((error: unknown) => {
-      log(`requête en échec : ${error instanceof Error ? error.message : String(error)}`);
+      log(`requête en échec : ${safeErrorReason(error)}`);
       if (!res.headersSent) sendJson(res, 500, { error: "Erreur interne." });
       else res.end();
     });

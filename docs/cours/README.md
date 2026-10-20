@@ -19,6 +19,7 @@ dans l'ordre : chacun part de l'état du code laissé par le précédent.
 | 4 | 3 | [L'API, client MCP](jour-4-client-mcp.md) | Un serveur MCP par utilisateur, outils MCP dans le registre, le modèle décide de chercher (`RAG_MODE`), résultats numérotés, panne du serveur, évaluation des deux modes | [approfondissement](approfondissement/jour-4-client-mcp.md) |
 | 4 | 4 | [Le serveur MCP distant](jour-4-serveur-distant.md) | Transport Streamable HTTP, sessions, jeton par requête en temps constant, identité liée à la session, OAuth 2.1 (expliqué), client HTTP dans l'API | [approfondissement](approfondissement/jour-4-serveur-distant.md) |
 | 4 | 5 | [La mémoire chiffrée](jour-4-memoire-chiffree.md) | IndexedDB sans bibliothèque, AES-GCM 256 (IV, AAD), clé non extractible, métadonnées chiffrées, sauvegarde différée, deux onglets, menaces (XSS, extension) | [approfondissement](approfondissement/jour-4-memoire-chiffree.md) |
+| 5 | 1 | [La sécurité : durcir et prouver](jour-5-securite.md) | Rendu sûr des réponses (`safeUrls`), CSP et en-têtes, verrou sur les outils à effet de bord, `DATA_REMINDER`, `CHAT_DEBUG`, logs d'erreur sans contenu, sondes avant / après | — (voir [`security/SECURITE.md`](../../security/SECURITE.md) et [`docs/architecture.md`](../architecture.md)) |
 
 ## La trame commune
 

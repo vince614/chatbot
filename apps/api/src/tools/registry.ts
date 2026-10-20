@@ -7,6 +7,11 @@ export interface ExecuteOptions {
   signal?: AbortSignal;
   /** Délai maximal d'exécution, en millisecondes, pour les outils qui n'en fixent pas. */
   timeoutMs?: number;
+  /**
+   * Demande à l'utilisateur s'il autorise un outil à effet de bord. Absent :
+   * personne ne peut confirmer, tout outil à effet de bord est refusé.
+   */
+  confirm?: (call: { name: string; input: unknown }) => Promise<boolean>;
 }
 
 export interface ToolRegistry {
@@ -17,6 +22,18 @@ export interface ToolRegistry {
 }
 
 const DEFAULT_TIMEOUT_MS = 5_000;
+
+/**
+ * Ce que le modèle lit quand une action est refusée. Factuel, sans détour à
+ * suggérer : le modèle doit le dire à l'utilisateur, pas chercher un autre outil.
+ */
+function confirmationRequired(name: string): string {
+  return (
+    `Action refusée : l'outil "${name}" modifie quelque chose hors de cette conversation et exige ` +
+    "la confirmation explicite de l'utilisateur, qui n'a pas été donnée. Ne réessaie pas. Dis à " +
+    "l'utilisateur quelle action a été demandée et pourquoi elle n'a pas été faite."
+  );
+}
 
 /**
  * Registre d'outils. Indépendant du reste de l'application : on pourra y
@@ -40,10 +57,17 @@ export function createToolRegistry(tools: AnyTool[]): ToolRegistry {
       }));
     },
 
-    async execute(name, input, { signal, timeoutMs: defaultTimeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+    async execute(name, input, { signal, timeoutMs: defaultTimeoutMs = DEFAULT_TIMEOUT_MS, confirm } = {}) {
       const tool = byName.get(name);
       if (!tool) {
         return failure(`Outil inconnu : "${name}".`);
+      }
+      // OWASP LLM01 : le modèle peut avoir lu une consigne dans un document.
+      // Une lecture ne coûte rien ; une action (envoyer, écrire, supprimer)
+      // n'est faite que si un humain l'a confirmée. Refus par défaut : un
+      // outil qui ne se déclare pas en lecture seule est traité comme une action.
+      if (tool.readOnly !== true && !(confirm && (await confirm({ name, input })))) {
+        return { ...failure(confirmationRequired(name)), needsConfirmation: true };
       }
       const timeoutMs = tool.timeoutMs ?? defaultTimeoutMs;
 

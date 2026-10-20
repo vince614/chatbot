@@ -2,6 +2,8 @@ import { createInterface } from "node:readline";
 import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 
+import { safeErrorReason } from "@chatbot/rag/errors";
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -365,7 +367,7 @@ function describe(error: unknown): string {
   if (error instanceof StreamableHTTPError) return `HTTP ${error.code ?? "?"}`;
   if (error instanceof Error && error.cause instanceof Error) {
     const code = (error.cause as NodeJS.ErrnoException).code;
-    return code ?? error.cause.message;
+    return code ?? safeErrorReason(error.cause);
   }
-  return error instanceof Error ? error.message : String(error);
+  return safeErrorReason(error);
 }

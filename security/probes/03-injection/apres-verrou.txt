@@ -1,0 +1,5 @@
+get_current_datetime (lecture seule) : exécuté
+envoyer_notification (effet de bord)  : refusé
+  ce que le modèle lit : Action refusée : l'outil "envoyer_notification" modifie quelque chose hors de cette conversation et exige la confirmation explicite de l'utilisateur, qui n'a pas été donnée. Ne réessaie pas. Dis à l'utilisateur quelle action a été demandée et pourquoi elle n'a pas été faite.
+
+BLOQUÉ : l'action exige une confirmation que personne n'a donnée.

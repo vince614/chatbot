@@ -15,6 +15,11 @@ export interface Tool<S extends z.ZodType = z.ZodType> {
   execute(input: z.infer<S>, context: ToolContext): Promise<unknown>;
   /** Délai propre à l'outil, en millisecondes ; sinon, celui de l'appelant. */
   timeoutMs?: number;
+  /**
+   * Vrai si l'outil ne fait que lire. Absent ou faux : l'outil est supposé
+   * avoir un effet de bord, et le registre exige une confirmation humaine.
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -30,6 +35,8 @@ export interface ExternalTool {
   /** Exécute l'outil. Le résultat est déjà sous sa forme finale : texte et succès ou échec. */
   execute(input: unknown, context: ToolContext): Promise<ToolExecutionResult>;
   timeoutMs?: number;
+  /** Pour un outil MCP : son annotation readOnlyHint. Même règle que Tool.readOnly. */
+  readOnly?: boolean;
 }
 
 /** Ce que le registre accepte : un outil maison (Zod) ou un outil externe (JSON Schema). */
@@ -52,4 +59,6 @@ export interface ToolExecutionResult {
   ok: boolean;
   /** Contenu à renvoyer au modèle : JSON du résultat, ou message d'erreur lisible. */
   content: string;
+  /** Vrai si l'outil n'a pas été exécuté faute de confirmation (effet de bord). */
+  needsConfirmation?: boolean;
 }

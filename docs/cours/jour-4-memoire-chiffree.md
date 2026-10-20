@@ -1,6 +1,6 @@
 # Jour 4 · Cours 5 — La mémoire chiffrée
 
-> [Sommaire](README.md) · Précédent : [Jour 4 · Cours 4 — Le serveur MCP distant](jour-4-serveur-distant.md) · [Approfondissement : le code](approfondissement/jour-4-memoire-chiffree.md)
+> [Sommaire](README.md) · Précédent : [Jour 4 · Cours 4 — Le serveur MCP distant](jour-4-serveur-distant.md) · Suivant : [Jour 5 · Cours 1 — La sécurité](jour-5-securite.md) · [Approfondissement : le code](approfondissement/jour-4-memoire-chiffree.md)
 
 > **Prérequis.** [Le flux d'un message](jour-1-flux-dun-message.md) (`useChat`,
 > serveur sans état) et [les droits d'accès](jour-3-droits.md) (utilisateurs

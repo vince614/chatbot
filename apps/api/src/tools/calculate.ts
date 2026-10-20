@@ -17,6 +17,7 @@ export const calculateTool: Tool<typeof schema> = {
     "Évalue une expression arithmétique exacte : nombres décimaux, + - * / % ^, " +
     "parenthèses et moins unaire. À utiliser pour tout calcul plutôt que de le faire de tête.",
   schema,
+  readOnly: true,
   async execute({ expression }) {
     const result = evaluate(expression);
     return { expression, result };

@@ -113,7 +113,11 @@ async function executeToolCall(
   const durationMs = Math.round(performance.now() - startedAt);
 
   // Outil, utilisateur, durée, succès : ni les arguments ni le résultat.
-  log.info({ tool: call.name, userId, durationMs, ok: result.ok }, "outil exécuté");
+  if (result.needsConfirmation) {
+    log.info({ tool: call.name, userId }, "outil à effet de bord refusé : confirmation requise");
+  } else {
+    log.info({ tool: call.name, userId, durationMs, ok: result.ok }, "outil exécuté");
+  }
   emit({ event: "tool_result", data: { name: call.name, ok: result.ok } });
   onToolResult?.(call, result);
 

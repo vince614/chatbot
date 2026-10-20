@@ -6,6 +6,7 @@ import Fastify from "fastify";
 
 import {
   ConfigError,
+  loadChatDebug,
   loadConfig,
   loadDatabaseConfig,
   loadEmbeddingConfig,
@@ -63,13 +64,29 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 // erreur sur le pool : sans écouteur, Node arrêterait tout le serveur.
 pool.on("error", (error) => app.log.warn({ reason: error.message }, "connexion Postgres perdue"));
 
+// En-têtes de sécurité sur toutes les réponses de l'API (JSON et flux SSE).
+// L'API ne sert jamais de page : sa CSP interdit tout, au cas où un navigateur
+// afficherait une réponse comme un document. Le flux SSE écrit ses en-têtes
+// lui-même (reply.hijack) : il les reçoit par reply.raw dès onRequest.
+const API_SECURITY_HEADERS = {
+  "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+  "Cross-Origin-Resource-Policy": "same-origin",
+  // Réponses propres à un utilisateur : jamais en cache (navigateur ou proxy).
+  "Cache-Control": "no-store",
+};
+app.addHook("onRequest", async (_request, reply) => {
+  for (const [name, value] of Object.entries(API_SECURITY_HEADERS)) reply.raw.setHeader(name, value);
+});
+
 await app.register(
   async (api) => {
     api.get("/health", async () => ({ status: "ok" }));
     // Pour le sélecteur d'utilisateur de l'interface (exercice : voir
     // auth/fake-identity.ts). Identifiant et nom seulement, jamais les groupes.
     api.get("/users", async () => ({ users: [...users.values()].map(({ id, nom }) => ({ id, nom })) }));
-    await api.register(chatRoutes, { llm, localTools, ragMode: config.ragMode, retrieve, mcp, users });
+    await api.register(chatRoutes, { llm, localTools, ragMode: config.ragMode, retrieve, mcp, users, debugAllowed: config.chatDebug });
   },
   { prefix: "/api" },
 );
@@ -79,6 +96,7 @@ app.log.info(
   { ragMode: config.ragMode, mcpTransport: mcpTransport.kind, ...(mcpTransport.kind === "http" ? { mcpUrl: mcpTransport.url.href } : {}) },
   "mode de recherche documentaire",
 );
+if (config.chatDebug) app.log.warn("CHAT_DEBUG=true : /chat renvoie le prompt système au client qui le demande (développement seulement)");
 
 async function exitOnConfigError<T>(promise: Promise<T>): Promise<T> {
   try {
@@ -97,6 +115,7 @@ function loadConfigOrExit() {
     return {
       ...loadConfig(),
       ragMode: loadRagMode(),
+      chatDebug: loadChatDebug(),
       rag: {
         databaseUrl: loadDatabaseConfig().databaseUrl,
         embedding: loadEmbeddingConfig(),

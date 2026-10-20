@@ -1,0 +1,14 @@
+=== Console ===
+[navigateur:error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[console.log] [sonde-02] vrai message envoyé
+
+=== Réseau (hors fichiers du serveur de dev) ===
+GET http://localhost:4173/
+GET http://localhost:4173/assets/index-DFizbxjw.js
+GET http://localhost:4173/assets/index-P7ozq2Gk.css
+GET http://localhost:4173/api/users
+GET http://localhost:4173/favicon.ico
+POST http://localhost:4173/api/chat
+
+=== DOM du dernier message assistant ===
+<p>Bonjour</p>

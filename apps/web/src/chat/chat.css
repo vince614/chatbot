@@ -931,3 +931,12 @@ body.resizing-horizontal {
 .json__summary:hover {
   color: var(--text);
 }
+
+/* Lien ou image de la réponse neutralisé (voir safeUrls.ts) : visible, mais inerte. */
+.neutralized {
+  color: var(--muted);
+}
+
+.neutralized__note {
+  font-size: 0.85em;
+}

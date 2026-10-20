@@ -1,0 +1,40 @@
+=== En-têtes de la page (vite preview) ===
+HTTP/1.1 200 OK
+Vary: Origin
+Content-Type: text/html
+Cache-Control: no-cache
+Etag: W/"1ea-LwGqcvfq3F4JIV+Ae0Od4DncLoE"
+Date: Mon, 19 Oct 2026 14:32:37 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+=== En-têtes de l'API (/api/health) ===
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+content-length: 15
+Date: Mon, 19 Oct 2026 14:32:37 GMT
+Connection: keep-alive
+Keep-Alive: timeout=72
+
+=== Console ===
+[navigateur:error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[console.log] SONDE-CSP-INLINE : script inline exécuté
+[console.log] [sonde-02] injections faites
+[console.log] SONDE-CSP-ONERROR : gestionnaire inline exécuté
+
+=== Réseau (hors fichiers du serveur de dev) ===
+GET http://localhost:4173/
+GET http://localhost:4173/assets/index-DFizbxjw.js
+GET http://localhost:4173/assets/index-P7ozq2Gk.css
+GET http://localhost:4173/api/users
+GET http://localhost:4173/favicon.ico
+GET http://127.0.0.1:9999/sonde-csp-fetch?d=conversation-de-bruno
+GET http://localhost:4173/inexistant.png
+GET http://127.0.0.1:9999/sonde-csp-image?d=conversation-de-bruno
+
+=== DOM du dernier message assistant ===
+(aucun message assistant)
+
+=== witness.log ===
+2026-10-19T14:32:40.459Z GET /sonde-csp-fetch?d=conversation-de-bruno
+2026-10-19T14:32:40.461Z GET /sonde-csp-image?d=conversation-de-bruno

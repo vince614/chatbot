@@ -1,0 +1,5 @@
+propre  [mcp] search_documents : échec en 0 ms : Error: invalid input syntax for type tsquery: «…»
+propre  [mcp] search_documents : échec en 0 ms : Error: Voyage a répondu HTTP 400 : {«…»:«…»}
+propre  [mcp] search_documents : échec en 0 ms : Error HTTP 400: 400 {«…»:«…»,«…»:{«…»:«…»}}
+
+OK : les messages d'erreur sont journalisés sans la donnée qu'ils citent.

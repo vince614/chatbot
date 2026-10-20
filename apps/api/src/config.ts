@@ -81,6 +81,18 @@ export async function loadMcpTransport(users: ReadonlyMap<string, User>): Promis
   return { kind, url, tokens: new Map(tokens.map(({ token, user }) => [user.id, token])) };
 }
 
+/**
+ * CHAT_DEBUG, optionnel : « true » autorise le drapeau "debug" de /chat, qui
+ * renvoie au navigateur le prompt système, l'historique complet envoyé au
+ * modèle (résultats d'outils compris) et ses réponses brutes. Outil
+ * d'apprentissage : désactivé par défaut, à ne jamais activer en production
+ * (OWASP LLM07, fuite du prompt système).
+ */
+export function loadChatDebug(): boolean {
+  loadDotEnv();
+  return process.env["CHAT_DEBUG"]?.trim() === "true";
+}
+
 /** Comment /chat utilise la recherche documentaire (RAG_MODE). */
 export const RAG_MODES = ["always", "tool"] as const;
 export type RagMode = (typeof RAG_MODES)[number];

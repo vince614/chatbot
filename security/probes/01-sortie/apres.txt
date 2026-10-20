@@ -1,0 +1,31 @@
+=== HTML produit par MessageBubble ===
+<article class="bubble bubble--assistant"><div class="bubble__markdown">
+<p>Voici la réponse demandée.</p>
+
+<p>HTML : &lt;img src=x onerror=&quot;console.log(&#x27;SONDE-XSS&#x27;)&quot;&gt;</p>
+
+<p>Image : <span class="neutralized" title="Image non chargée : http://127.0.0.1:9999/sonde-image.png?d=conversation-de-bruno">[image bloquée : pixel — 127.0.0.1:9999]</span></p>
+
+<p>SVG : <span class="neutralized" title="Image non chargée : data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=">[image bloquée : svg — data:]</span></p>
+
+<p>Lien : <span class="neutralized" title="Lien non suivi : ">clique ici <span class="neutralized__note">[lien non suivi : URL refusée]</span></span></p>
+
+<p>Lien : <span class="neutralized" title="Lien non suivi : ">ouvrir <span class="neutralized__note">[lien non suivi : URL refusée]</span></span></p>
+
+<p>Lien : <span class="neutralized" title="Lien non suivi : http://127.0.0.1:9999/sonde-lien?d=conversation-de-bruno">la documentation <span class="neutralized__note">[lien non suivi : 127.0.0.1:9999]</span></span></p></div></article>
+
+=== Verdict par vecteur ===
+bloque      html-onerror     HTML brut avec gestionnaire d'événement
+bloque      image-locale     Image Markdown vers une URL locale (exfiltration)
+bloque      image-data-svg   Image data: de type SVG (seuls png/jpeg/gif/webp sont admis)
+bloque      lien-javascript  Lien javascript:
+bloque      lien-data-html   Lien data:text/html
+bloque      lien-inconnu     Lien vers une origine inconnue (cliquable sans avertissement)
+bloque      preload-image    <link rel=preload> vers une image distante
+
+=== Témoins positifs (doivent rester fonctionnels) ===
+fonctionne  citation
+fonctionne  image-data-gif
+fonctionne  lien-interne
+
+OK : aucun vecteur ne passe, rien de légitime n'est cassé.

@@ -3,6 +3,7 @@ import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { extractCitedIndexes, formatPages, linkifyCitations, parseCitationHref, sourceAnchorId } from "./citations";
+import { checkImageSrc, checkLinkHref, safeUrlTransform } from "./safeUrls";
 import { SourceList } from "./SourceList";
 import { ToolActivityLine } from "./ToolActivityLine";
 import type { UiMessage } from "./types";
@@ -56,7 +57,26 @@ export function MessageBubble({ message, streaming }: MessageBubbleProps) {
       a: ({ node: _node, href, children, ...rest }: ComponentProps<"a"> & { node?: unknown }) => {
         const n = parseCitationHref(href, messageId);
         const source = n === null ? undefined : sources?.find((s) => s.index === n);
-        if (n === null || !source) return <a href={href} {...rest}>{children}</a>;
+        if (n === null || !source) {
+          // Lien écrit par le modèle : seulement vers une origine connue (voir safeUrls.ts).
+          const verdict = checkLinkHref(href);
+          if (!verdict.allowed) {
+            return (
+              <span className="neutralized" title={`Lien non suivi : ${href ?? ""}`}>
+                {children} <span className="neutralized__note">[lien non suivi : {verdict.host}]</span>
+              </span>
+            );
+          }
+          return verdict.external ? (
+            <a href={verdict.url} target="_blank" rel="noopener noreferrer" {...rest}>
+              {children}
+            </a>
+          ) : (
+            <a href={verdict.url} {...rest}>
+              {children}
+            </a>
+          );
+        }
         return (
           <a
             href={href}
@@ -71,6 +91,19 @@ export function MessageBubble({ message, streaming }: MessageBubbleProps) {
             {children}
           </a>
         );
+      },
+      // Une image distante est une requête sortante automatique : un canal de
+      // fuite sans clic. On ne charge que la même origine et les data: bitmap.
+      img: ({ node: _node, src, alt }: ComponentProps<"img"> & { node?: unknown }) => {
+        const verdict = checkImageSrc(typeof src === "string" ? src : undefined);
+        if (!verdict.allowed) {
+          return (
+            <span className="neutralized" title={`Image non chargée : ${String(src ?? "")}`}>
+              [image bloquée{alt ? ` : ${alt}` : ""} — {verdict.host}]
+            </span>
+          );
+        }
+        return <img src={verdict.url} alt={alt ?? ""} referrerPolicy="no-referrer" />;
       },
     }),
     [messageId, sources, openSource],
@@ -91,8 +124,8 @@ export function MessageBubble({ message, streaming }: MessageBubbleProps) {
             </div>
           )}
           <div className="bubble__markdown">
-            {/* Pas de rehype-raw : le HTML éventuel reste du texte échappé. */}
-            <Markdown remarkPlugins={[remarkGfm]} components={components}>
+            {/* Pas de rehype-raw : le HTML éventuel reste du texte échappé. Les URL passent par safeUrls.ts. */}
+            <Markdown remarkPlugins={[remarkGfm]} components={components} urlTransform={safeUrlTransform}>
               {markdown}
             </Markdown>
             {streaming && <span className="bubble__cursor" aria-hidden="true" />}

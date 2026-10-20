@@ -16,6 +16,7 @@ export const getCurrentDatetimeTool: Tool<typeof schema> = {
     "d'aujourd'hui (quel jour sommes-nous, dans combien de jours, quelle heure est-il…) " +
     "plutôt que de deviner.",
   schema,
+  readOnly: true,
   async execute({ timezone = "UTC" }) {
     // Intl rejette les fuseaux inconnus : l'erreur remonte au modèle comme résultat d'outil.
     let formatter: Intl.DateTimeFormat;

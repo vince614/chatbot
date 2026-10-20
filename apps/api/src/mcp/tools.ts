@@ -64,6 +64,7 @@ const FALLBACK_TOOLS: McpTool[] = [
       properties: { question: { type: "string", description: "La question, en langage naturel." } },
       required: ["question"],
     },
+    annotations: { readOnlyHint: true },
   },
 ];
 
@@ -125,10 +126,13 @@ function toExternalTool(pool: McpPool, userId: string, tool: McpTool, options: L
   };
 }
 
-/** Nom préfixé, description et schéma : ce que voit le modèle. */
-function describe(tool: McpTool): Pick<ExternalTool, "name" | "description" | "inputSchema"> {
+/** Nom préfixé, description et schéma : ce que voit le modèle ; et s'il ne fait que lire. */
+function describe(tool: McpTool): Pick<ExternalTool, "name" | "description" | "inputSchema" | "readOnly"> {
   return {
     name: `${MCP_TOOL_PREFIX}${tool.name}`,
+    // L'annotation du serveur, et seulement si elle est explicite : un outil
+    // muet sur ce point est traité comme une action (confirmation requise).
+    readOnly: tool.annotations?.readOnlyHint === true,
     description: tool.description ?? tool.title ?? tool.name,
     // Le schéma est déjà du JSON Schema : c'est le format que le modèle
     // reçoit. On le transmet sans passer par Zod (voir le cours).
