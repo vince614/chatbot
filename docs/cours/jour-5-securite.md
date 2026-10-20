@@ -246,7 +246,23 @@ supprimer tout le message d'erreur ?
 **Le problème.** Une défense qui dégrade les réponses sera retirée au
 premier incident de qualité. Il faut le mesurer, pas le supposer.
 
-*Évaluation finale en cours au moment de ce commit : les scores seront ajoutés au commit suivant.*
+`npm run eval -- --user chloe --rag-mode tool --mode hybrid` (même configuration
+que la référence : `claude-opus-5-5`, juge `claude-haiku-4-5`, recherche hybride, k=5).
+
+| Critère | Référence (16/10, avant sécurité) | Après les corrections (20/10) |
+| --- | --- | --- |
+| Recherche | 16/16 | 16/16 |
+| Citation | 16/16 | 16/16 |
+| Abstention | 16/20 | 16/20 |
+| Exactitude | 16/16 | 16/16 |
+
+Aucune baisse. Les 4 points d'abstention perdus sont les **mêmes questions
+qu'avant** (q17 à q20) et pour la même raison : le modèle dit « Je ne sais
+pas » mais cite quand même des extraits voisins. C'est une faiblesse connue,
+antérieure à cette journée, pas un effet du `DATA_REMINDER` ni du verrou.
+Run : `apps/api/evals/runs/2026-10-20T10-17-06` (son champ `commit` indique
+`a5a44c9-modifie` : il a démarré avant le commit de la phase 2, sur le code
+déjà corrigé).
 
 > **À retenir.** Chaque correction de sécurité se termine par une mesure de
 > non-régression : les témoins positifs des sondes, puis l'évaluation.
